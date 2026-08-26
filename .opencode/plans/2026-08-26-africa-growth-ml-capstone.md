@@ -1,4 +1,4 @@
-# Africa Growth Explorer - Implementation Plan (v2 - All Issues Fixed)
+# Africa Growth Explorer - Implementation Plan (v3 - All Issues Fixed)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -16,6 +16,7 @@
 |---------|------|---------|
 | v1 | 2026-08-26 | Initial plan |
 | v2 | 2026-08-26 | Fixed 6 blockers (B1-B6), 7 gaps, 12 minors. Added report, presentation, data audit, metadata writing tasks. |
+| v3 | 2026-08-26 | Fixed MENA substring trap (B7: explicit ISO3 list), picklable log-transform (B8), slider clamp (B9), eval subset fairness (B10), Task 2.3 refit + saved predictions (B11), task preconditions, executed notebooks, gitignore verification. |
 
 ---
 
@@ -30,7 +31,7 @@ Every task in this plan must adhere to these rules:
 | 3. Docstrings + type hints | Module docstring at top of every file; function docstrings with Args/Returns; type hints on all signatures |
 | 4. Logging, no print() | `logging` module used throughout; zero `print()` statements |
 | 5. No silent failures | All error paths raise exceptions or log warnings |
-| 6. No leakage | Temporal split enforced; imputer fitted only on training data inside sklearn pipeline; log transform inside pipeline via FunctionTransformer |
+| 6. No leakage | Temporal split enforced; imputer fitted only on training data inside sklearn pipeline; log transform inside pipeline via FunctionTransformer (clip_log1p from src/features.py) |
 | 7. Lean notebooks | Notebooks: Markdown → code → output → interpretation; logic lives in `src/` |
 | 8. Deliberate visuals | `src/visualization.py` defines project palette; all charts use consistent styling |
 | 9. Minimal dependencies | Only essential packages in requirements.txt; xgboost not needed |
@@ -73,7 +74,9 @@ africa-growth-ml/
 │       └── country_metadata.csv    # Country reference table (committed)
 ├── models/
 │   ├── growth_model.joblib         # Serialized sklearn pipeline (committed)
-│   └── model_metadata.json         # Feature contract, metrics, split years (committed)
+│   ├── model_metadata.json         # Feature contract, metrics, split years (committed)
+│   ├── test_predictions.parquet    # Precomputed test predictions (committed, B11)
+│   └── feature_importance.parquet  # Precomputed permutation importance (committed, B11)
 ├── notebooks/
 │   ├── 01_data_profiling.ipynb     # EDA + data audit
 │   └── 02_model_evaluation.ipynb   # Model comparison + error analysis + bootstrap CI
@@ -201,6 +204,12 @@ git add .gitignore
 git commit -m "chore: add .gitignore - models and processed data are committed"
 ```
 
+- [ ] **Step 3: Verify gitignore fix actually took (B1 PRE-FLIGHT)**
+
+Run: `git check-ignore models/growth_model.joblib data/processed/model_data.parquet`
+
+Expected: Returns nothing (blank output). If either file is ignored, the gitignore has a leftover `models/` or `*.json` pattern that needs removing. This check must pass before any deployment attempt.
+
 ---
 
 ## Task 0.3: Create LICENSE
@@ -309,8 +318,64 @@ log_transform_candidates:
   - "NY.GDP.PCAP.CD"
 
 geographic:
-  # "Africa" matches all African regions in WDI metadata (North + Sub-Saharan)
-  region_filter: "Africa"
+  # B7 FIX: Explicit ISO3 list prevents MENA substring trap.
+  # "Middle East & North Africa" contains "Africa" - a region filter
+  # matching that substring would silently include Saudi Arabia, Iran, etc.
+  # This list is the 54 UN-recognized African states.
+  african_countries:
+    - DZA
+    - AGO
+    - BEN
+    - BWA
+    - BFA
+    - BDI
+    - CPV
+    - CMR
+    - CAF
+    - TCD
+    - COM
+    - COG
+    - COD
+    - CIV
+    - DJI
+    - EGY
+    - GNQ
+    - ERI
+    - SWZ
+    - ETH
+    - GAB
+    - GMB
+    - GHA
+    - GIN
+    - GNB
+    - KEN
+    - LSO
+    - LBR
+    - LBY
+    - MDG
+    - MWI
+    - MLI
+    - MRT
+    - MAR
+    - MOZ
+    - NAM
+    - NER
+    - NGA
+    - RWA
+    - STP
+    - SEN
+    - SYC
+    - SLE
+    - SOM
+    - ZAF
+    - SSD
+    - TZA
+    - TGO
+    - TUN
+    - UGA
+    - ZMB
+    - ZWE
+    - ESH
 
 temporal:
   min_year: 2000
@@ -348,6 +413,16 @@ def test_config_has_required_keys():
     assert len(config.features) > 0
     assert config.target_code is not None
     assert config.random_state == 42  # B6 FIX: was "config RANDOM_STATE" (syntax error)
+    assert len(config.african_countries) >= 50  # B7 FIX: explicit ISO3 list
+
+
+def test_african_countries_list_no_mena():
+    """B7 FIX: Verify no Middle Eastern ISO3 codes in the list."""
+    config = load_config(Path("config/indicators.yaml"))
+    mena_codes = {"SAU", "IRN", "IRQ", "ISR", "JOR", "KWT", "OMN", "QAT",
+                  "ARE", "YEM", "SYR", "LBN"}
+    overlap = mena_codes.intersection(set(config.african_countries))
+    assert len(overlap) == 0, f"MENA codes found in African list: {overlap}"
 ```
 
 - [ ] **Step 3: Run test to verify it fails**
@@ -393,7 +468,7 @@ class Config:
     target_code: str
     target_name: str
     prediction_horizon_years: int
-    region_filter: str
+    african_countries: List[str]
     min_year: int
     train_end: int
     val_end: int
@@ -432,7 +507,7 @@ def load_config(path: Path = Path("config/indicators.yaml")) -> Config:
         target_code=raw["target"]["code"],
         target_name=raw["target"]["name"],
         prediction_horizon_years=raw["target"]["prediction_horizon_years"],
-        region_filter=raw["geographic"]["region_filter"],
+        african_countries=raw["geographic"]["african_countries"],
         min_year=raw["temporal"]["min_year"],
         train_end=raw["temporal"]["train_end"],
         val_end=raw["temporal"]["val_end"],
@@ -444,8 +519,8 @@ def load_config(path: Path = Path("config/indicators.yaml")) -> Config:
         hgb_max_depth=raw["model"]["hgb_max_depth"],
     )
     logger.info(
-        "Loaded %d features, target=%s, region=%s",
-        len(config.features), config.target_code, config.region_filter
+        "Loaded %d features, target=%s, %d African countries",
+        len(config.features), config.target_code, len(config.african_countries)
     )
     return config
 ```
@@ -545,6 +620,8 @@ git commit -m "chore: add data directories and README"
 **Files:** No persistent file changes. This is a one-time audit.
 
 **Why this task exists:** The WDI CSV zip's actual contents vary between downloads. `WDICountry.csv` vs `WDI_Country.csv`, folder nesting, and the metadata region column name must be confirmed before the data pipeline runs.
+
+**Precondition:** The WDI CSV zip MUST be present at `data/raw/WDI_CSV.zip` before this task runs. If your environment has no internet, download it manually before starting Phase 1. Task 1.1 hardcodes filenames that are confirmed here.
 
 - [ ] **Step 1: Unzip and list files**
 
@@ -718,24 +795,28 @@ def sample_metadata():
     })
 
 
-def test_filter_african_countries_with_metadata(sample_wdi_df, sample_metadata):
-    """Using metadata, aggregates should be filtered out."""
-    result = filter_african_countries(sample_wdi_df, metadata=sample_metadata)
-    assert "Sub-Saharan Africa" not in result["Country Name"].values
-    assert len(result) == 3  # GHA, KEN, NGA only
-
-
-def test_filter_african_countries_with_explicit_codes(sample_wdi_df):
-    """B6 FIX: Using explicit_codes (not calling with no args which raises ValueError)."""
-    result = filter_african_countries(sample_wdi_df, explicit_codes=["GHA", "KEN", "NGA"])
+def test_filter_african_countries_with_iso3_list(sample_wdi_df):
+    """B7 FIX: Using explicit ISO3 list (no more metadata/region substring)."""
+    result = filter_african_countries(sample_wdi_df, african_codes=["GHA", "KEN", "NGA"])
     assert "Sub-Saharan Africa" not in result["Country Name"].values
     assert len(result) == 3
 
 
-def test_filter_african_countries_raises_without_args(sample_wdi_df):
-    """Should raise ValueError when neither metadata nor explicit_codes provided."""
-    with pytest.raises(ValueError, match="Either metadata or explicit_codes"):
-        filter_african_countries(sample_wdi_df)
+def test_filter_african_countries_excludes_mena(sample_wdi_df):
+    """B7 FIX: MENA codes must not be in the African list."""
+    # Add a MENA country to the test data
+    mena_row = pd.DataFrame({
+        "Country Name": ["Saudi Arabia"],
+        "Country Code": ["SAU"],
+        "Indicator Name": ["GDP per capita growth"],
+        "Indicator Code": ["NY.GDP.PCAP.KD.ZG"],
+        "2018": [1.0],
+        "2019": [2.0],
+    })
+    df_with_mena = pd.concat([sample_wdi_df, mena_row], ignore_index=True)
+    result = filter_african_countries(df_with_mena, african_codes=["GHA", "KEN", "NGA"])
+    assert "SAU" not in result["Country Code"].values
+    assert len(result) == 3
 
 
 def test_filter_indicators_selects_correct_codes(sample_wdi_df):
@@ -845,50 +926,40 @@ def load_wdi_metadata(path: Path) -> pd.DataFrame:
 
 def filter_african_countries(
     df: pd.DataFrame,
-    metadata: Optional[pd.DataFrame] = None,
-    explicit_codes: Optional[List[str]] = None,
-    region_filter: str = "Africa",
+    african_codes: List[str],
 ) -> pd.DataFrame:
-    """Filter to African countries only.
+    """Filter to African countries only using explicit ISO3 list.
+
+    B7 FIX: Uses an explicit ISO3 list (from config/indicators.yaml) instead of
+    substring-matching the Region column. "Middle East & North Africa" contains
+    the substring "Africa" and would silently include Saudi Arabia, Iran, etc.
 
     Args:
         df: Raw WDI dataframe.
-        metadata: WDI metadata with Region column. If None, use explicit_codes.
-        explicit_codes: Fallback list of ISO3 codes if metadata unavailable.
-        region_filter: String to match in Region column (from config).
+        african_codes: List of ISO3 codes for African countries.
 
     Returns:
         Filtered dataframe with African countries only.
-
-    Raises:
-        ValueError: If neither metadata nor explicit_codes is provided.
     """
-    if metadata is not None and "CountryCode" in metadata.columns:
-        african_codes = metadata[
-            metadata["Region"].str.contains(region_filter, case=False, na=False)
-        ]["CountryCode"].unique()
-        logger.info("Found %d African countries from metadata (filter='%s')",
-                    len(african_codes), region_filter)
-    elif explicit_codes is not None:
-        african_codes = explicit_codes
-        logger.info("Using %d explicit African country codes", len(african_codes))
-    else:
-        raise ValueError("Either metadata or explicit_codes must be provided")
-
     # Exclude known aggregates
     aggregate_codes = {"SSF", "AFE", "AFW", "WLD", "INX", "SSA", "EAS", "ECS",
                        "TEA", "TMN", "SAS", "ECS", "LCN", "EMU", "OED", "PSS",
                        "PST", "UMC", "LIC", "MIC", "HPC", "FCS", "INX"}
-    african_codes = [c for c in african_codes if c not in aggregate_codes]
+    valid_codes = [c for c in african_codes if c not in aggregate_codes]
 
-    mask = df["Country Code"].isin(african_codes)
+    mask = df["Country Code"].isin(valid_codes)
     filtered = df[mask].copy()
     logger.info(
-        "Filtered to %d rows (%d countries) from %d total rows",
+        "Filtered to %d rows (%d countries) from %d total rows using ISO3 list",
         len(filtered),
         filtered["Country Code"].nunique(),
         len(df),
     )
+    # Cross-check: log any ISO3 in data that's in our list but metadata might disagree
+    data_codes = set(filtered["Country Code"].unique())
+    missing_from_data = set(valid_codes) - data_codes
+    if missing_from_data:
+        logger.warning("ISO3 codes in config but not in data: %s", missing_from_data)
     return filtered
 
 
@@ -1006,10 +1077,9 @@ if __name__ == "__main__":
     metadata_path = Path(sys.argv[2]) if len(sys.argv) > 2 else Path(f"data/raw/{WDI_METADATA_FILE}")
     try:
         df = load_wdi_csv(raw_path)
-        metadata = load_wdi_metadata(metadata_path) if metadata_path.exists() else None
         config = load_config()
-        african_df = filter_african_countries(df, metadata=metadata,
-                                              region_filter=config.region_filter)
+        # B7 FIX: Use explicit ISO3 list, not region substring filter
+        african_df = filter_african_countries(df, african_codes=config.african_countries)
         indicator_codes = [f.code for f in config.features]
         indicator_codes.append(config.target_code)
         filtered = filter_indicators(african_df, indicator_codes)
@@ -1043,6 +1113,8 @@ git commit -m "feat: implement data loading, filtering, and reshaping pipeline"
 ## Task 1.2: Write src/features.py - Feature Engineering & Target Creation
 
 **Files:** Create: `src/features.py`, Create: `tests/test_features.py`
+
+**B8 FIX:** `clip_log1p` function lives here (in `src/features.py`) so it is importable by module path. The pipeline references it as `FunctionTransformer(src.features.clip_log1p)`. Never define it inline or in a notebook - Streamlit Cloud will crash with `ModuleNotFoundError`.
 
 - [ ] **Step 1: Write test_features.py (B3 FIX - no apply_log_transform test)**
 
@@ -1162,6 +1234,25 @@ import logging
 from typing import List, Tuple, Optional
 
 logger = logging.getLogger(__name__)
+
+
+# B8 FIX: Named function in src/ so it's picklable by module path.
+# Never use a lambda or notebook-local function - Streamlit Cloud
+# needs to import it by module path when loading the serialized pipeline.
+def clip_log1p(X: np.ndarray) -> np.ndarray:
+    """Apply log1p transform after clipping negatives to 0.
+
+    Used inside sklearn pipelines via FunctionTransformer. Legitimate negative
+    values exist in WDI data (inflation, FDI can be negative); log1p of
+    anything < -1 produces NaN.
+
+    Args:
+        X: Input array (may contain negative values).
+
+    Returns:
+        log1p-transformed array with negatives clipped to 0.
+    """
+    return np.log1p(np.clip(X, 0, None))
 
 
 def create_target(
@@ -1749,11 +1840,17 @@ Structure (AGENTS.md rule 7: Markdown → code → output → interpretation):
 24. **Markdown:** "## 8. Final Feature Set Decision"
 25. **Markdown:** Summary of which features to keep/drop and why
 
-- [ ] **Step 2: Commit**
+- [ ] **Step 2: Execute notebook (MANDATORY - notebooks with empty outputs are not deliverables)**
+
+Run: `jupyter nbconvert --to notebook --execute notebooks/01_data_profiling.ipynb --output 01_data_profiling.ipynb`
+
+This executes all cells and saves the notebook WITH outputs. The internship deliverable is EDA evidence - empty notebook structure is not acceptable. If you cannot run this (no internet/no raw data), execute against synthetic local parquet mirroring the schema.
+
+- [ ] **Step 3: Commit**
 
 ```bash
 git add notebooks/01_data_profiling.ipynb
-git commit -m "feat: add data profiling notebook for EDA"
+git commit -m "feat: add data profiling notebook for EDA (executed with outputs)"
 ```
 
 ---
@@ -1945,6 +2042,7 @@ from sklearn.compose import ColumnTransformer
 from sklearn.linear_model import Ridge
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from src.features import clip_log1p  # B8 FIX: import from src/ for picklability
 
 logger = logging.getLogger(__name__)
 
@@ -1983,21 +2081,6 @@ def persistence_baseline(current_year_growth: pd.Series) -> np.ndarray:
     return current_year_growth.values
 
 
-def _log1p_transform(X: np.ndarray) -> np.ndarray:
-    """Apply log1p transform, clipping negatives to 0 first.
-
-    B3 FIX: This is used inside the pipeline via FunctionTransformer.
-    The app feeds raw WDI values; the pipeline handles transformation internally.
-
-    Args:
-        X: Input array (may contain negative values).
-
-    Returns:
-        log1p-transformed array.
-    """
-    return np.log1p(np.clip(X, 0, None))
-
-
 def build_ridge_pipeline(
     alpha: float = 1.0,
     log_transform_features: Optional[List[str]] = None,
@@ -2005,8 +2088,10 @@ def build_ridge_pipeline(
 ) -> Pipeline:
     """Build Ridge regression pipeline with imputation, optional log transform, scaling.
 
-    B3 FIX: Log transform is applied inside the pipeline. If log_transform_features
-    is provided, those features get log1p via ColumnTransformer; others pass through.
+    B3+B8 FIX: Log transform is applied inside the pipeline via FunctionTransformer
+    referencing clip_log1p from src/features.py (importable by module path for pickling).
+    If log_transform_features is provided, those features get log1p via ColumnTransformer;
+    others pass through.
 
     Args:
         alpha: Ridge regularization strength.
@@ -2026,7 +2111,7 @@ def build_ridge_pipeline(
 
         preprocessor = ColumnTransformer(
             transformers=[
-                ("log", FunctionTransformer(_log1p_transform), log_idx),
+                ("log", FunctionTransformer(clip_log1p), log_idx),  # B8 FIX
                 ("pass", "passthrough", pass_idx),
             ],
             remainder="drop",
@@ -2038,7 +2123,7 @@ def build_ridge_pipeline(
 
     pipeline = Pipeline(steps)
     logger.info("Built Ridge pipeline (alpha=%.4f, log_features=%s)",
-               alpha, log_transform_features)
+                alpha, log_transform_features)
     return pipeline
 
 
@@ -2555,6 +2640,22 @@ def main():
 
     # Split
     train, val, test = create_temporal_split(panel, config.train_end, config.val_end)
+
+    # B10 FIX: Drop test rows with missing current-year growth globally.
+    # Persistence baseline needs this value; the ML model also uses it as a feature.
+    # If missing, baseline can't predict but ML can (via imputer), creating unfair
+    # comparison (ML evaluated on more rows). Drop globally so all models are
+    # evaluated on identical test observations.
+    if "NY.GDP.PCAP.KD.ZG" in test.columns:
+        valid_persistence_mask = test["NY.GDP.PCAP.KD.ZG"].notna()
+        n_dropped = (~valid_persistence_mask).sum()
+        if n_dropped > 0:
+            logger.warning(
+                "Dropping %d test rows with missing current-year growth "
+                "(needed for fair persistence baseline comparison)", n_dropped
+            )
+            test = test[valid_persistence_mask]
+
     X_train, y_train = build_feature_matrix(train, final_features)
     X_val, y_val = build_feature_matrix(val, final_features)
     X_test, y_test = build_feature_matrix(test, final_features)
@@ -2624,6 +2725,25 @@ def main():
         winner_pipeline, X_test, y_test, final_features, n_repeats=10
     )
 
+    # B11 FIX: Save precomputed test predictions as parquet.
+    # The app reads this file instead of calling model.predict on every rerun,
+    # which would lag badly on Streamlit Cloud's small instances.
+    test_predictions = pd.DataFrame({
+        "iso3": test["iso3"].values,
+        "year": test["year"].values,
+        "country_name": test["country_name"].values,
+        "actual": y_test.values,
+        "predicted": y_pred_test,
+    })
+    test_predictions.to_parquet("models/test_predictions.parquet", index=False)
+    logger.info("Test predictions saved to models/test_predictions.parquet")
+
+    # B11 FIX: Save precomputed permutation importance as parquet too.
+    importance_df = importance.reset_index()
+    importance_df.columns = ["feature", "importance"]
+    importance_df.to_parquet("models/feature_importance.parquet", index=False)
+    logger.info("Feature importance saved to models/feature_importance.parquet")
+
     # Write metadata
     all_metrics = {
         "global_mean_baseline": gm_metrics,
@@ -2672,8 +2792,8 @@ ls -la models/growth_model.joblib models/model_metadata.json
 - [ ] **Step 4: Commit**
 
 ```bash
-git add scripts/finalize_model.py models/growth_model.joblib models/model_metadata.json data/processed/country_metadata.csv
-git commit -m "feat: finalize model - select winner, save pipeline and metadata"
+git add scripts/finalize_model.py models/growth_model.joblib models/model_metadata.json models/test_predictions.parquet models/feature_importance.parquet data/processed/country_metadata.csv
+git commit -m "feat: finalize model - select winner, save pipeline, metadata, and precomputed predictions"
 ```
 
 ---
@@ -2712,11 +2832,17 @@ Structure:
 22. **Markdown:** "## 10. COVID-19 Placement Note"
 23. **Markdown:** Explanation that 2020 shock sits in validation, test is post-COVID 2021+. This is a deliberate decision.
 
-- [ ] **Step 2: Commit**
+- [ ] **Step 2: Execute notebook (MANDATORY - notebooks with empty outputs are not deliverables)**
+
+Run: `jupyter nbconvert --to notebook --execute notebooks/02_model_evaluation.ipynb --output 02_model_evaluation.ipynb`
+
+This executes all cells and saves the notebook WITH outputs. The internship deliverable requires executed evidence. If you cannot run this (no processed data yet), execute against synthetic local parquet mirroring the schema.
+
+- [ ] **Step 3: Commit**
 
 ```bash
 git add notebooks/02_model_evaluation.ipynb
-git commit -m "feat: add model evaluation notebook with bootstrap CI"
+git commit -m "feat: add model evaluation notebook with bootstrap CI (executed with outputs)"
 ```
 
 ---
@@ -2892,7 +3018,9 @@ def page_explore(data: pd.DataFrame):
 def page_performance(data: pd.DataFrame, model, metadata: dict):
     """Render the model performance page.
 
-    B5 FIX: Permutation importance loaded from metadata, not recomputed.
+    B5+B11 FIX: All data loaded from precomputed files (parquet), not computed per rerun.
+    Streamlit Cloud instances are small; recomputing permutation importance or
+    predictions per page load would lag badly.
     """
     st.title("📈 Model Performance")
 
@@ -2923,43 +3051,43 @@ def page_performance(data: pd.DataFrame, model, metadata: dict):
     })
     st.dataframe(baseline_df)
 
-    # Actual vs Predicted
+    # B11 FIX: Load precomputed test predictions from parquet (not model.predict)
     st.subheader("Actual vs. Predicted (Test Set)")
-    from src.features import create_target, build_feature_matrix, create_temporal_split
-    config = load_config()
-    panel = data.copy()
-    panel = create_target(panel, config.target_code)
-    _, _, test = create_temporal_split(panel, config.train_end, config.val_end)
-    X_test = test[feature_names]
-    y_test = test["target_next_year"]
-    valid = y_test.notna()
-    X_test, y_test = X_test[valid], y_test[valid]
-    y_pred = model.predict(X_test)
+    try:
+        test_preds = pd.read_parquet("models/test_predictions.parquet")
+    except FileNotFoundError:
+        st.info("Precomputed test predictions not available. Run finalize_model.py first.")
+        return
 
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots()
-    plot_actual_vs_predicted(y_test.values, y_pred, ax=ax)
+    plot_actual_vs_predicted(test_preds["actual"].values,
+                             test_preds["predicted"].values, ax=ax)
     st.pyplot(fig)
     plt.close(fig)
 
     # Residuals
     st.subheader("Residual Analysis")
     fig, ax = plt.subplots()
-    plot_residuals(y_test.values, y_pred, ax=ax)
+    plot_residuals(test_preds["actual"].values,
+                   test_preds["predicted"].values, ax=ax)
     st.pyplot(fig)
     plt.close(fig)
 
-    # Feature importance (B5 FIX: from metadata, not recomputed)
+    # B11 FIX: Load precomputed permutation importance from parquet
     st.subheader("Feature Importance (Permutation)")
-    importance_dict = metrics.get("feature_importance", {})
-    if importance_dict:
-        importance = pd.Series(importance_dict).sort_values(ascending=False)
+    try:
+        importance_df = pd.read_parquet("models/feature_importance.parquet")
+        importance = pd.Series(
+            importance_df["importance"].values,
+            index=importance_df["feature"].values
+        ).sort_values(ascending=False)
         fig, ax = plt.subplots()
         plot_feature_importance(importance, ax=ax)
         st.pyplot(fig)
         plt.close(fig)
-    else:
-        st.info("Feature importance not available in metadata.")
+    except FileNotFoundError:
+        st.info("Feature importance not available. Run finalize_model.py first.")
 
 
 def page_scenario(data: pd.DataFrame, model, metadata: dict, config: Config):
@@ -3027,7 +3155,7 @@ def page_scenario(data: pd.DataFrame, model, metadata: dict, config: Config):
                 feature_name,
                 min_value=slider_min,
                 max_value=slider_max,
-                value=current_val,
+                value=float(np.clip(current_val, slider_min, slider_max)),  # B9 FIX: clamp default to [min, max]
                 step=(slider_max - slider_min) / 100 if slider_max > slider_min else 0.1,
             ),
             "p01": p01,
@@ -3689,6 +3817,11 @@ git commit -m "docs: add presentation slides outline with content"
 | B4 | Extrapolation warning unreachable | Slider range widened to data min/max; warning on P1-P99 |
 | B5 | Metadata never written | Added Task 2.3 (finalize_model.py) |
 | B6 | Test syntax errors | Fixed `config.RANDOM_STATE` and explicit_codes in tests |
+| B7 | MENA substring trap | Replaced region_filter with explicit ISO3 list (54 African states) |
+| B8 | Log-transform picklability | Moved clip_log1p to src/features.py, imported by module path |
+| B9 | Slider crash on default | Clamped slider default value to [obs_min, obs_max] |
+| B10 | Eval subset unfairness | Drop test rows with missing current-year growth before all evaluations |
+| B11 | App recomputes per rerun | Save precomputed test predictions + importance as parquet files |
 | G1 | No report task | Added Task 4.1 |
 | G2 | No presentation | Added Task 4.2 with slide outline |
 | G3 | __main__ blocks missing | Added to data.py and features.py |
