@@ -1,6 +1,9 @@
 # Raw data - zip file only (CSV files are committed for portability)
 *.zip
 
+# Build artifacts
+*.egg-info/
+
 # Logs (local only)
 logs/
 

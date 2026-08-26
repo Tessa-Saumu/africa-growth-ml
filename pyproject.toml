@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "africa-growth-ml"
+version = "0.1.0"
+description = "Africa Growth Explorer - ML Decision Support System"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.0,<3.0",
+    "numpy>=1.24,<2.0",
+    "scikit-learn>=1.3,<2.0",
+    "matplotlib>=3.7,<4.0",
+    "seaborn>=0.12,<1.0",
+    "streamlit>=1.30,<2.0",
+    "joblib>=1.3,<2.0",
+    "pyarrow>=14.0,<15.0",
+    "pyyaml>=6.0,<7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "ipykernel>=7.0",
+    "jupyter>=1.0",
+    "nbconvert>=7.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
