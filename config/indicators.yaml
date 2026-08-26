@@ -1,0 +1,132 @@
+# Africa Growth Explorer - Indicator Configuration
+# Feature CANDIDATES. Final feature list is determined by coverage analysis
+# and written to model_metadata.json at training time.
+
+target:
+  code: "NY.GDP.PCAP.KD.ZG"
+  name: "GDP per capita growth (annual %)"
+  prediction_horizon_years: 1
+
+features:
+  - code: "NY.GDP.PCAP.CD"
+    name: "GDP per capita (current US$)"
+    theme: "Economic level"
+  - code: "EG.ELC.ACCS.ZS"
+    name: "Access to electricity (% of population)"
+    theme: "Infrastructure"
+  - code: "IT.NET.USER.ZS"
+    name: "Individuals using the Internet (% of population)"
+    theme: "Technology"
+  - code: "NE.GDI.TOTL.ZS"
+    name: "Gross capital formation (% of GDP)"
+    theme: "Investment"
+  - code: "BX.KLT.DINV.WD.GD.ZS"
+    name: "Foreign direct investment, net inflows (% of GDP)"
+    theme: "External investment"
+  - code: "NE.TRD.GNFS.ZS"
+    name: "Trade (% of GDP)"
+    theme: "Openness"
+  - code: "FP.CPI.TOTL.ZG"
+    name: "Inflation, consumer prices (annual %)"
+    theme: "Macroeconomic stability"
+  - code: "SL.UEM.TOTL.ZS"
+    name: "Unemployment, total (% of total labor force)"
+    theme: "Labour market"
+  - code: "SP.DYN.LE00.IN"
+    name: "Life expectancy at birth, total (years)"
+    theme: "Health"
+  - code: "SE.SEC.ENRR"
+    name: "School enrollment, secondary (% gross)"
+    theme: "Education"
+  - code: "FS.AST.PRVT.GD.ZS"
+    name: "Domestic credit to private sector (% of GDP)"
+    theme: "Financial development"
+  - code: "NE.CON.GOVT.ZS"
+    name: "General government final consumption expenditure (% of GDP)"
+    theme: "Public sector"
+  - code: "SP.URB.TOTL.IN.ZS"
+    name: "Urban population (% of total population)"
+    theme: "Demographics"
+  - code: "SP.POP.GROW"
+    name: "Population growth (annual %)"
+    theme: "Demographics"
+
+# Log-transform candidates: features that benefit from log1p scaling.
+# These are applied INSIDE the sklearn pipeline via FunctionTransformer,
+# so the app never sees _log columns - it feeds raw WDI values.
+log_transform_candidates:
+  - "NY.GDP.PCAP.CD"
+
+geographic:
+  # B7 FIX: Explicit ISO3 list prevents MENA substring trap.
+  # "Middle East & North Africa" contains "Africa" - a region filter
+  # matching that substring would silently include Saudi Arabia, Iran, etc.
+  # This list is the 54 UN-recognized African states.
+  african_countries:
+    - DZA
+    - AGO
+    - BEN
+    - BWA
+    - BFA
+    - BDI
+    - CPV
+    - CMR
+    - CAF
+    - TCD
+    - COM
+    - COG
+    - COD
+    - CIV
+    - DJI
+    - EGY
+    - GNQ
+    - ERI
+    - SWZ
+    - ETH
+    - GAB
+    - GMB
+    - GHA
+    - GIN
+    - GNB
+    - KEN
+    - LSO
+    - LBR
+    - LBY
+    - MDG
+    - MWI
+    - MLI
+    - MRT
+    - MAR
+    - MOZ
+    - NAM
+    - NER
+    - NGA
+    - RWA
+    - STP
+    - SEN
+    - SYC
+    - SLE
+    - SOM
+    - ZAF
+    - SSD
+    - TZA
+    - TGO
+    - TUN
+    - UGA
+    - ZMB
+    - ZWE
+    - ESH
+
+temporal:
+  min_year: 2000
+  train_end: 2017
+  val_end: 2020
+  # COVID note: 2020 shock sits in validation (informs model selection).
+  # Test is post-COVID 2021+. This is a deliberate decision documented in the report.
+
+model:
+  random_state: 42
+  ridge_alpha: 1.0
+  hgb_max_iter: 1000
+  hgb_learning_rate: 0.05
+  hgb_max_depth: 5
