@@ -1,5 +1,4 @@
-# Raw data (too large for git - ~30MB CSV)
-data/raw/
+# Raw data - zip file only (CSV files are committed for portability)
 *.zip
 
 # Logs (local only)
