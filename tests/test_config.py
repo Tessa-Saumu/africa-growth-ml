@@ -15,8 +15,8 @@ def test_config_has_required_keys():
     config = load_config(Path("config/indicators.yaml"))
     assert len(config.features) > 0
     assert config.target_code is not None
-    assert config.random_state == 42  # B6 FIX: was "config RANDOM_STATE" (syntax error)
-    assert len(config.african_countries) >= 50  # B7 FIX: explicit ISO3 list
+    assert config.random_state == 42
+    assert len(config.african_countries) >= 50
 
 
 def test_african_countries_list_no_mena():
