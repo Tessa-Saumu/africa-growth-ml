@@ -1,4 +1,7 @@
-# Raw data - zip file only (CSV files are committed for portability)
+# Raw data (too large for git - download WDI separately)
+data/raw/
+
+# Zip files
 *.zip
 
 # Build artifacts
