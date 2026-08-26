@@ -23,3 +23,22 @@
 11. **Changes:** Inspect existing code and tests first, make the smallest appropriate change, update tests, run verification, and review the diff.
 
 12. **Final status:** Every coding response must state what changed, tests run, verification result, and `VERIFIED` or `NOT VERIFIED`.
+
+---
+
+## Notebook Kernel Setup (avoid 30min rabbit hole)
+
+To execute notebooks with `jupyter nbconvert --execute`, the kernel must find the project's `src/` module.
+
+**Working approach:**
+```bash
+pip install -e .                    # Install package in editable mode (creates .pth in site-packages)
+python -m ipykernel install --user --name=africa-growth-ml  # Register kernel
+# In notebook, use absolute path for imports:
+from pathlib import Path
+PROJECT_ROOT = Path(r'C:\dev\africa-growth-ml')
+import sys
+sys.path.insert(0, str(PROJECT_ROOT))
+```
+
+**What fails:** Relative imports (`sys.path.insert(0, '../src')`) don't work because nbconvert runs from a temp dir. The kernel needs the project root in sys.path AND the package installed so `src.config` resolves.
