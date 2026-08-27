@@ -14,7 +14,7 @@ import logging
 import re
 import textwrap
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from fpdf import FPDF
 
@@ -208,6 +208,56 @@ def _split_row(line: str) -> List[str]:
     return parts
 
 
+def _image_size(path: Path) -> Tuple[int, int]:
+    """Return (width, height) in pixels for a PNG, for aspect-ratio scaling.
+
+    Reads the IHDR chunk directly so the builder keeps its only hard
+    dependency on fpdf2 rather than pulling in an imaging library.
+
+    Args:
+        path: Path to a PNG file.
+
+    Returns:
+        Tuple of (width, height) in pixels; (0, 0) if unreadable.
+    """
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(24)
+        if len(head) >= 24 and head[:8] == b"\x89PNG\r\n\x1a\n":
+            return (int.from_bytes(head[16:20], "big"),
+                    int.from_bytes(head[20:24], "big"))
+    except OSError:
+        logger.warning("Could not read image dimensions: %s", path)
+    return (0, 0)
+
+
+def _caption_height(lines: List[str], idx: int, pdf: "ReportPDF") -> float:
+    """Estimate the height of a bold-lead caption paragraph following a figure.
+
+    Used to decide whether a figure and its caption fit on the current page.
+    Overestimates slightly, which is the safe direction: a spurious page break
+    is cosmetic, a caption orphaned from its figure is not.
+
+    Args:
+        lines: All document lines.
+        idx: Index of the line just after the image line.
+        pdf: The PDF instance, for effective page width.
+
+    Returns:
+        Estimated caption height in millimetres (0.0 if no caption follows).
+    """
+    j = idx
+    while j < len(lines) and not lines[j].strip():
+        j += 1
+    if j >= len(lines):
+        return 0.0
+    text = lines[j].strip()
+    if not text.startswith("**Figure"):
+        return 0.0
+    chars_per_line = max(int(pdf.epw / 1.85), 1)
+    return (len(text) / chars_per_line + 1) * 4.6 + 4.0
+
+
 def render_markdown(pdf: ReportPDF, md_text: str, base_dir: Path) -> None:
     """Render markdown source into the pdf document object.
 
@@ -256,7 +306,25 @@ def render_markdown(pdf: ReportPDF, md_text: str, base_dir: Path) -> None:
         if m_img:
             img_path = (base_dir / m_img.group(2)).resolve()
             if img_path.exists():
-                pdf.image(str(img_path), x=pdf.l_margin, w=min(pdf.epw, 170))
+                # Keep the figure and its caption on one page. Scale the image
+                # to the space actually left, and if the figure plus a caption
+                # band cannot fit, break the page first rather than orphaning
+                # the caption (a caption split across pages is unreadable).
+                render_w = min(pdf.epw, 170)
+                iw, ih = _image_size(img_path)
+                render_h = render_w * ih / iw if iw else 0.0
+                caption_band = _caption_height(lines, i + 1, pdf)
+                avail = pdf.h - pdf.b_margin - pdf.get_y()
+                if render_h + caption_band > avail:
+                    max_h = pdf.h - pdf.b_margin - pdf.t_margin - caption_band
+                    if render_h > max_h and max_h > 0:
+                        # Too tall for any page at full width: scale to fit.
+                        render_w = render_w * max_h / render_h
+                        render_h = max_h
+                    if render_h + caption_band > avail:
+                        pdf.add_page()
+                x = pdf.l_margin + (pdf.epw - render_w) / 2
+                pdf.image(str(img_path), x=x, w=render_w)
                 pdf.ln(2)
             else:
                 logger.warning("Figure not found, skipping: %s", img_path)

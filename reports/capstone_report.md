@@ -171,6 +171,18 @@ and re-executed in `notebooks/01_data_profiling.ipynb`.
 ### Target distribution
 GDP per capita growth spans **−49.13 pp to +91.78 pp** (n=1,255 observed country-years; median 1.92 pp; 72.8% of observations non-negative — the origin of the majority-class rate that makes naive "directional accuracy" meaningless, see §7).
 
+![Feature distributions](../figures/eda_feature_distributions.png)
+
+**Figure 1.** Marginal distributions of all 14 candidate features plus the target. Three shapes matter for modelling. Inflation, FDI and GDP per capita are severely right-skewed with long single-sided tails — this is why GDP per capita enters the Ridge pipeline under a log1p transform and why the tree model, which is scale-invariant, is the more natural fit. Electricity access and urbanisation are broad and near-uniform, carrying level information rather than change. The target itself is sharply peaked at roughly 2 pp with tails in both directions: most country-years are unremarkable, and the variance that a model would need to explain sits in a small number of extreme observations.
+
+### Missingness structure
+
+Coverage is not missing-at-random, and the pattern is structural rather than incidental.
+
+![Missingness heatmap](../figures/eda_missingness_heatmap.png)
+
+**Figure 2.** Average missing fraction by country-year. Gaps concentrate in specific country blocks — South Sudan before independence, Ethiopia from 2012, Djibouti and Liberia in the early 2000s — not uniformly across the panel. Two consequences follow. First, median imputation inside the pipeline is defensible for scattered gaps but weakest exactly where gaps cluster, so the affected countries carry wider effective error. Second, because the missingness is country-specific and persistent, a coverage filter computed on the full panel would leak test-period data availability into a training decision; the filter is therefore computed on the training mask only (§4).
+
 ### Summary statistics (computed, full panel)
 
 (table from `reports/generated/table_eda_summary.md`, truncated here to key rows)
@@ -207,7 +219,9 @@ Pairs the narrative previously quoted, now computed: electricity↔internet
 inflation↔growth **−0.09** (was −0.31, overstated 3.4×),
 capital-formation↔growth **0.10**.
 
-![Correlation heatmap](../figures/correlation_heatmap.png)
+![Feature correlation matrix](../figures/eda_correlation_matrix.png)
+
+**Figure 3.** Pairwise complete correlations. The dense red block in the upper-left quadrant is the development-level cluster: electricity access, internet users, urbanisation, life expectancy and GDP per capita all correlate at 0.45–0.71. These are five measurements of substantially the same latent variable, which is why permutation importance later distributes credit almost entirely to one of them (§8) rather than to five independent signals. The row that matters most is `NY.GDP.PCAP.KD.ZG` — current-year growth — which is essentially uncorrelated with everything else (|r| ≤ 0.13 across the board). The strongest predictor of next-year growth in a persistence sense has no linear relationship with any level indicator in the panel.
 
 ### Main EDA findings
 1. Development *levels* (electricity, internet, urbanization, life expectancy) are strongly collinear slow-moving variables — they carry level information, not year-on-year change.
@@ -274,7 +288,15 @@ The model achieves **parity** with the unconditional mean, not a demonstrated vi
 80.67% of test targets are ≥0, so **any** always-positive predictor — including the global-mean baseline — scores 80.67% directional accuracy by construction. Reported next to the majority-class rate, the deployed model's directional **skill is 0.00pp** and its balanced directional accuracy is 51.3%: no sign information beyond the class prior. Earlier drafts presented a raw directional accuracy *below* the majority rate as a strength; that framing is retracted.
 
 ### Fit quality (test set, n=150)
-- Actual-vs-predicted and residual plots: `figures/actual_vs_predicted.png` and `figures/residuals.png` at the repository root
+
+![Actual vs predicted, test set](../figures/modeling_actual_vs_predicted.png)
+
+**Figure 4.** Actual versus predicted next-year growth on the sealed test set. This is the clearest single picture of the null result. If the model carried real signal, points would track the diagonal; instead they form a horizontal band at roughly 1.3–2.1 pp across an actual range spanning −10 pp to +15 pp. The model has learned the unconditional mean and little else. Note the behaviour at the extremes: for the two country-years near −9 pp actual, the model predicts approximately +1.4 and +3.7 pp, and for the +15 pp observation it predicts +2.6 pp. The compression is not a tuning failure — it is what a correctly regularised model does when the features carry no conditional information, and it is preferable to a model that manufactures confident wrong answers at the tails.
+
+![Residuals vs predicted, test set](../figures/modeling_residuals.png)
+
+**Figure 5.** Residuals against predicted values. The cloud is centred on zero with no visible slope, confirming the near-zero mean residual reported below and the absence of the systematic bias that the previous train+val refit introduced. The vertical spread — roughly ±5 pp for typical observations and beyond ±10 pp for the extremes — is the honest error magnitude. Because predictions occupy a narrow horizontal range, residual variance is driven almost entirely by variation in the actual outcome rather than by any structure the model imposed.
+
 - **Mean residual (actual − predicted): +0.080 pp** — near-zero bias, as intended under the pre-registered train-only refit. (The previous deployed model carried a −2.07 pp systematic bias from refitting across the COVID regime; the sensitivity analysis below reproduces that mechanism honestly.)
 - Bootstrap 95% CIs (2,000 resamples, seed 42): **MAE [1.52, 2.18]**, **RMSE [2.16, 3.41]** — both intervals contain the corresponding global-mean baseline values.
 
@@ -342,7 +364,9 @@ narratives on top of them; that was doubly wrong — permutation importance
 carries no sign semantics (it measures *degradation from scrambling*), and the
 values are noise. Both errors are retracted here.
 
-![Feature importance (validation, CI-significant only)](../figures/feature_importance.png)
+![Permutation importance, validation set, CI-significant features only](../figures/modeling_feature_importance.png)
+
+**Figure 6.** The only two features whose permutation importance has a 95% confidence interval excluding zero, measured on validation. Twelve of the fourteen features are omitted from this chart because their intervals contain zero — they are indistinguishable from noise, and plotting them would invite exactly the over-reading that earlier drafts committed. Note the axis scale: the larger of the two effects is 0.046 in MAE-degradation units against a model MAE near 3.9 on validation, roughly one percent. These are statistically detectable but economically negligible effects, and GDP per capita's appearance here is best read as the model latching onto the development-level cluster identified in Figure 3, not as evidence that income level drives next-year growth.
 
 ### Direction: Ridge standardized coefficients (training fit; CV-best α=3000)
 
