@@ -4,11 +4,13 @@ All charts use the same color palette, font settings, and styling for a
 professional, unified look across the application and report.
 """
 import matplotlib.pyplot as plt
+from pathlib import Path
 import seaborn as sns
 import numpy as np
 import pandas as pd
 import logging
 from typing import Optional, Dict
+from matplotlib.figure import Figure
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +54,43 @@ def set_project_style() -> None:
         "figure.titlesize": 16,
     })
     logger.info("Project matplotlib style applied")
+
+
+def save_figure(fig: Figure, name: str, project_root: Optional[Path] = None,
+                subdir: str = "figures", dpi: int = 160) -> Path:
+    """Persist a figure to the project-wide figures/ folder.
+
+    Single convention for every PNG the project produces (notebooks and the
+    report-asset builder alike): ``<project_root>/figures/<name>.png``.
+
+    Args:
+        fig: Matplotlib figure to save.
+        name: Descriptive file name ending in ``.png`` (e.g.
+            "eda_missingness_heatmap.png").
+        project_root: Repository root; resolved upward from cwd (looking for
+            pyproject.toml) when omitted.
+        subdir: Target folder name under the root.
+        dpi: Rasterization density.
+
+    Returns:
+        Path of the written PNG.
+
+    Raises:
+        ValueError: If name does not end in .png.
+    """
+    if not name.endswith(".png"):
+        raise ValueError(f"figure names must end in .png, got {name!r}")
+    root = Path(project_root) if project_root else None
+    if root is None:
+        here = Path.cwd()
+        root = next((q for q in [here, *here.parents]
+                     if (q / "pyproject.toml").exists()), here)
+    out_dir = root / subdir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / name
+    fig.savefig(path, bbox_inches="tight", dpi=dpi)
+    logger.info("Saved figure: %s", path)
+    return path
 
 
 def plot_missingness_heatmap(

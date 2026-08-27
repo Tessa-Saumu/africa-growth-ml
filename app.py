@@ -116,11 +116,16 @@ def load_test_predictions() -> pd.DataFrame:
 
 
 @st.cache_data
-def load_feature_importance() -> pd.Series:
-    """Load precomputed permutation feature importance.
+def load_feature_importance() -> pd.DataFrame:
+    """Load precomputed permutation importance (computed on VALIDATION with CIs).
+
+    H1 remediation: the parquet now carries dispersion and significance columns;
+    magnitudes carry no directional meaning and non-significant rows must be
+    presented as 'not distinguishable from noise', never as effects.
 
     Returns:
-        Series indexed by feature name with importance values.
+        DataFrame with columns feature, importance_mean, importance_std,
+        ci_lower, ci_upper, is_significant.
     """
     imp_path = Path("models/feature_importance.parquet")
     if not imp_path.exists():
@@ -128,9 +133,26 @@ def load_feature_importance() -> pd.Series:
         st.stop()
 
     df = pd.read_parquet(imp_path)
-    importance: pd.Series = df.set_index("feature")["importance"]  # type: ignore[assignment]
-    logger.info("Loaded feature importance for %d features", len(importance))
-    return importance
+    logger.info("Loaded feature importance for %d features (%d significant)",
+                len(df), int(df["is_significant"].sum()))
+    return df
+
+
+@st.cache_data
+def get_training_data(data: pd.DataFrame, train_end: int) -> pd.DataFrame:
+    """Training-period rows only, for guardrail calibration.
+
+    H3: spec section 14 requires observed TRAINING minimum/maximum. Using the
+    full panel silently widens the safe band (inflation P99 92.05 vs 49.51).
+
+    Args:
+        data: Full processed country-year panel.
+        train_end: Last training year from model metadata.
+
+    Returns:
+        Rows with year <= train_end.
+    """
+    return data[data["year"] <= train_end]
 
 
 @st.cache_data
@@ -177,7 +199,13 @@ def get_scenario_features(metadata: Dict, config_features: List[Dict]) -> List[s
     available_features = set(metadata["feature_names"])
     scenario_features = [f for f in priority_codes if f in available_features]
 
-    # Ensure we have at least 3, at most 5
+    # Ensure we have at least 3, at most 5 (pad with other available features)
+    if len(scenario_features) < 3:
+        for f in metadata["feature_names"]:
+            if f not in scenario_features:
+                scenario_features.append(f)
+            if len(scenario_features) >= 3:
+                break
     return scenario_features[:5]
 
 
@@ -231,7 +259,14 @@ def check_extrapolation_warning(
     scenario_values: Dict[str, float],
     data: pd.DataFrame,
 ) -> List[str]:
-    """Check if any scenario values fall outside P1-P99 range.
+    """Check if any scenario values fall outside the TRAINING P1-P99 range.
+
+    H3: callers must pass the training-window rows (see get_training_data),
+    per spec section 14 — guardrails are calibrated on observed training data.
+
+    Args:
+        scenario_values: Feature code -> proposed value.
+        data: Training-period rows of the processed panel.
 
     Returns:
         List of warning messages.
@@ -242,8 +277,8 @@ def check_extrapolation_warning(
         if val < p1 or val > p99:
             display_name = get_feature_display_name(feat, load_config_features())
             warnings.append(
-                f"**Warning:** {display_name} = {val:.1f} is outside the "
-                f"historical range (P1-P99: {p1:.1f}–{p99:.1f}). "
+                f"**Warning:** {display_name} = {val:.1f} is outside the training "
+                f"range (P1-P99: {p1:.1f}–{p99:.1f}). "
                 f"The result may be unreliable due to extrapolation."
             )
     return warnings
@@ -346,8 +381,8 @@ def main():
     st.sidebar.caption(
         f"Model: {metadata['model_type']}  \n"
         f"Features: {metadata['n_features']}  \n"
-        f"Training: ≤{metadata['train_end']}  \n"
-        f"Test: >{metadata['val_end']}"
+        f"Train features ≤{metadata['train_end']} (targets ≤{metadata['train_end'] + 1})  \n"
+        f"Test features >{metadata['val_end']} (targets >{metadata['val_end'] + 1})"
     )
 
     # Route to page
@@ -360,7 +395,7 @@ def main():
     elif page == "🎯 Scenario Explorer":
         render_scenario_page(
             pipeline, processed_data, metadata, selected_iso3, selected_country_name,
-            config_features, feature_importance
+            config_features
         )
 
 
@@ -391,7 +426,7 @@ def render_overview_page(metadata: Dict, config_features: List[Dict]):
         st.markdown("""
         - **Target:** GDP per capita growth (annual %) in year *t+1*
         - **Features:** Development indicators observed in year *t*
-        - **Geography:** 52 African countries (UN-recognized states)
+        - **Geography:** African countries from an explicit ISO3 list (see README for coverage notes)
         - **Time Range:** 2000–2024 (training: 2000–2017, validation: 2018–2020, test: 2021+)
         - **Task:** Regression (predict next-year growth in percentage points)
         """)
@@ -416,10 +451,25 @@ def render_overview_page(metadata: Dict, config_features: List[Dict]):
         st.subheader("📈 Key Metrics (Test Set)")
         test_metrics = metadata["metrics"]["winner_test"]
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("MAE", f"{test_metrics['mae']:.2f} pp")
+        m1.metric("MAE", f"{test_metrics['mae']:.2f} pp",
+                  help=f"Global-mean baseline: {metadata['metrics']['global_mean_baseline']['mae']:.2f} pp")
         m2.metric("RMSE", f"{test_metrics['rmse']:.2f} pp")
         m3.metric("R²", f"{test_metrics['r2']:.3f}")
-        m4.metric("Directional Accuracy", f"{test_metrics['directional_accuracy']:.1%}")
+        m4.metric("Directional accuracy",
+                  f"{test_metrics['directional_accuracy']:.1%}",
+                  help=f"Majority-class rate is "
+                       f"{test_metrics['directional_majority_rate']:.1%}; skill = "
+                       f"{test_metrics['directional_skill']:+.1%} (H4: raw accuracy "
+                       f"is not skill)")
+        sig_ov = metadata.get("significance")
+        if sig_ov:
+            st.caption(
+                f"Paired improvement vs global mean: "
+                f"{sig_ov['paired_mae_improvement_vs_global_mean']:+.2f} pp, "
+                f"95% CI [{sig_ov['ci_lower']:+.2f}, {sig_ov['ci_upper']:+.2f}]"
+                + (" — significant." if sig_ov["significant_at_95"]
+                   else " — spans zero: parity with the mean baseline.")
+            )
 
     st.subheader("📋 Features Used by Model")
     feature_df = pd.DataFrame([
@@ -591,55 +641,93 @@ def render_explore_page(
 
 def render_performance_page(
     test_predictions: pd.DataFrame,
-    feature_importance: pd.Series,
+    feature_importance: pd.DataFrame,
     metadata: Dict,
     processed_data: pd.DataFrame,
 ):
-    """Render the Model Performance page."""
+    """Render the Model Performance page.
+
+    Args:
+        test_predictions: Deployed model's frozen test predictions.
+        feature_importance: Validation permutation importance with CIs.
+        metadata: model_metadata.json contents (single source of truth).
+        processed_data: Full processed panel (for by-context lookups).
+    """
     st.title("📊 Model Performance")
+
+    metrics = metadata["metrics"]
+
+    # ------------------------------------------------------------------
+    # Honest headline (Task 2.4/3.3): the significance verdict, not spin.
+    # ------------------------------------------------------------------
+    sig = metadata.get("significance")
+    winner_mae = metrics["winner_test"]["mae"]
+    gm_mae = metrics["global_mean_baseline"]["mae"]
+    if sig:
+        verdict = (
+            "statistically distinguishable from predicting the mean"
+            if sig["significant_at_95"] else
+            "**not** statistically distinguishable from predicting the mean"
+        )
+        st.info(
+            f"Test MAE {winner_mae:.2f} vs {gm_mae:.2f} for the global-mean baseline. "
+            f"Paired 95% CI on the improvement: "
+            f"[{sig['ci_lower']:+.2f}, {sig['ci_upper']:+.2f}] pp — this includes zero: "
+            f"the model is {verdict}. This parity result is the study's substantive "
+            f"finding; see the report for the pre-registered protocol behind it."
+        )
+
+    gate = metadata.get("gate", {})
+    if gate:
+        st.caption(
+            "Selection gate (validation): "
+            + ("PASSED — model beats all validation baselines before artifacts were written"
+               if gate.get("passed") else
+               "FAILED — shipped via --allow-baseline-failure; disclose this in the report")
+        )
 
     # Baseline comparison
     st.subheader("🏁 Baseline Comparison (Test Set)")
-    metrics = metadata["metrics"]
 
-    baseline_df = pd.DataFrame({
-        "Model": [
-            "Global Mean Baseline",
-            "Persistence Baseline",
-            f"{metadata['model_type']} (Test)",
-        ],
-        "MAE": [
-            metrics["global_mean_baseline"]["mae"],
-            metrics["persistence_baseline"]["mae"],
-            metrics["winner_test"]["mae"],
-        ],
-        "RMSE": [
-            metrics["global_mean_baseline"]["rmse"],
-            metrics["persistence_baseline"]["rmse"],
-            metrics["winner_test"]["rmse"],
-        ],
-        "R²": [
-            metrics["global_mean_baseline"]["r2"],
-            metrics["persistence_baseline"]["r2"],
-            metrics["winner_test"]["r2"],
-        ],
-        "Directional Accuracy": [
-            metrics["global_mean_baseline"]["directional_accuracy"],
-            metrics["persistence_baseline"]["directional_accuracy"],
-            metrics["winner_test"]["directional_accuracy"],
-        ],
-    })
+    def _row(label: str, m: Dict) -> Dict:
+        return {
+            "Model": label,
+            "MAE": m.get("mae"),
+            "RMSE": m.get("rmse"),
+            "R²": m.get("r2"),
+            "Directional accuracy": m.get("directional_accuracy"),
+            "Majority-class rate": m.get("directional_majority_rate"),
+            "Directional skill": (
+                m["directional_skill"] if m.get("directional_skill") is not None else None
+            ),
+        }
 
-    # Highlight best model
+    rows = [
+        _row("Global Mean Baseline", metrics["global_mean_baseline"]),
+        _row("Persistence Baseline", metrics.get("persistence_baseline", {})),
+    ]
+    if "country_historical_mean_baseline" in metrics:
+        rows.append(_row("Country Historical Mean Baseline",
+                         metrics["country_historical_mean_baseline"]))
+    rows.append(_row(f"{metadata['model_type']} (Test)", metrics["winner_test"]))
+    baseline_df = pd.DataFrame(rows)
+
     st.dataframe(
         baseline_df.style.format({
             "MAE": "{:.3f}",
             "RMSE": "{:.3f}",
             "R²": "{:.3f}",
-            "Directional Accuracy": "{:.1%}",
+            "Directional accuracy": "{:.1%}",
+            "Majority-class rate": "{:.1%}",
+            "Directional skill": "{:+.1%}",
         }),
         use_container_width=True,
         hide_index=True,
+    )
+    st.caption(
+        "H4: raw directional accuracy equals the majority-class rate for any "
+        "constant-sign predictor. 'Directional skill' = accuracy − majority rate; "
+        "values near zero mean no directional information beyond the class prior."
     )
 
     # Actual vs Predicted
@@ -662,15 +750,56 @@ def render_performance_page(
     st.pyplot(fig)
     plt.close(fig)
 
-    # Feature Importance
-    st.subheader("🔍 Feature Importance (Permutation)")
-    fig = plot_feature_importance(
-        importance=feature_importance,
-        title="Permutation Feature Importance (Test Set)",
-        top_n=14,
+    # Feature Importance (validation, with significance flags - H1)
+    st.subheader("🔍 Feature Importance (Permutation, Validation Set)")
+    imp = feature_importance
+    significant = imp[imp["is_significant"]]
+    noise = imp[~imp["is_significant"]]
+
+    if len(significant) > 0:
+        plot_series = pd.Series(
+            significant["importance_mean"].values, index=significant["feature"].values)
+        fig = plot_feature_importance(
+            importance=plot_series,
+            title="Permutation importance — CI excludes 0 (validation set)",
+            top_n=14,
+        )
+        st.pyplot(fig)
+        plt.close(fig)
+    else:
+        st.warning(
+            "No feature has a permutation-importance CI excluding zero: on this "
+            "model, feature-level attribution is indistinguishable from noise. "
+            "No directional claims are made."
+        )
+    st.caption(
+        f"{len(significant)}/{len(imp)} features significant at 95%. Importance "
+        "magnitude carries NO directional meaning (H1) — sign claims come only "
+        "from Ridge coefficients, in the panel below."
     )
-    st.pyplot(fig)
-    plt.close(fig)
+    if len(noise) > 0:
+        with st.expander(f"Features not distinguishable from noise ({len(noise)})"):
+            st.dataframe(
+                noise[["feature", "importance_mean", "ci_lower", "ci_upper"]].style.format(
+                    {"importance_mean": "{:+.4f}", "ci_lower": "{:+.4f}",
+                     "ci_upper": "{:+.4f}"}),
+                use_container_width=True, hide_index=True,
+            )
+
+    with st.expander("Ridge standardized coefficients (direction view, training fit)"):
+        rc_path = Path("models/ridge_coefficients.parquet")
+        if rc_path.exists():
+            rc = pd.read_parquet(rc_path)
+            st.dataframe(
+                rc[["feature", "coefficient"]].style.format({"coefficient": "{:+.4f}"}),
+                use_container_width=True, hide_index=True,
+            )
+            st.caption(
+                "Association only, from the linear benchmark — coefficients use the "
+                "post-ColumnTransformer feature order (H2-safe mapping). Not causal."
+            )
+        else:
+            st.info("Run scripts/finalize_model.py to generate ridge_coefficients.parquet.")
 
     # Metrics by year
     st.subheader("📅 Performance by Year (Test Set)")
@@ -679,8 +808,9 @@ def render_performance_page(
             "MAE": np.mean(np.abs(g["actual"] - g["predicted"])),
             "RMSE": np.sqrt(np.mean((g["actual"] - g["predicted"])**2)),
             "Directional Accuracy": ((g["actual"] >= 0) == (g["predicted"] >= 0)).mean(),
+            "Majority Rate": max((g["actual"] >= 0).mean(), (g["actual"] < 0).mean()),
             "N": len(g),
-        })
+        }), include_groups=False
     ).reset_index()
 
     st.dataframe(
@@ -688,6 +818,7 @@ def render_performance_page(
             "MAE": "{:.3f}",
             "RMSE": "{:.3f}",
             "Directional Accuracy": "{:.1%}",
+            "Majority Rate": "{:.1%}",
         }),
         use_container_width=True,
         hide_index=True,
@@ -695,17 +826,18 @@ def render_performance_page(
 
     # Model limitations
     st.subheader("⚠️ Model Limitations")
-    st.markdown("""
+    st.markdown(f"""
+    - **Parity, not victory:** the model's paired 95% CI vs the global-mean baseline
+      includes zero (see banner above). Treat predictions as the mean plus noise.
     - **Temporal generalization only:** Model evaluates prediction for future years of
       countries seen during training, not for completely unseen countries.
-    - **Negative R² on test set:** The model does not outperform a horizontal line
-      (global mean) in terms of explained variance. This is common for noisy
-      macroeconomic prediction tasks.
     - **Association ≠ Causation:** Feature importance reflects predictive association,
       not causal effect. See Causal Disclaimer on Overview and Scenario pages.
-    - **COVID-19 period:** Validation period (2018–2020) includes the 2020 shock.
-      Test period (2021+) is post-COVID.
-    - **Limited features:** Only 14 WDI indicators; many growth determinants omitted.
+    - **COVID-19 period:** validation TARGET years (2019–2021) include the 2020 shock.
+      Test TARGET years (2022–2024) are post-COVID. Refit policy is pre-registered
+      (`{metadata.get('refit_strategy', 'train_only')}`).
+    - **Limited features:** {metadata['n_features']} WDI indicators; many growth
+      determinants omitted.
     - **Median imputation:** Missing values filled with training median, which may
       not reflect country-specific conditions.
     """)
@@ -722,7 +854,6 @@ def render_scenario_page(
     selected_iso3: str,
     selected_country_name: str,
     config_features: List[Dict],
-    feature_importance: pd.Series,
 ):
     """Render the Scenario Explorer page."""
     st.title("🎯 Scenario Explorer")
@@ -776,14 +907,19 @@ def render_scenario_page(
         ])
         st.dataframe(baseline_display, use_container_width=True, hide_index=True)
 
-    # Scenario controls
+    # Scenario controls. H3 FIX: all ranges/percentiles come from the TRAINING
+    # window (spec section 14), not the full panel — otherwise a user could set
+    # inflation to 80% and get no warning because 80% < full-panel P99 (92%).
+    train_data = get_training_data(processed_data, metadata["train_end"])
     st.subheader("🎚️ Adjust Scenario Indicators")
-    st.caption("Modify up to 5 key indicators. Sliders use full observed data range. "
-               "Values outside the 1st–99th percentile trigger extrapolation warnings.")
+    st.caption(
+        "Modify up to 5 key indicators. Slider ranges and P1–P99 warning bands are "
+        f"the observed **training** distribution (2000–{metadata['train_end']}); "
+        "values outside the training P1–P99 trigger extrapolation warnings."
+    )
 
     scenario_features = get_scenario_features(metadata, config_features)
     scenario_changes = {}
-    all_warnings = []
 
     # Create sliders in columns
     n_cols = 3
@@ -792,40 +928,42 @@ def render_scenario_page(
     for i, feat in enumerate(scenario_features):
         with cols[i % n_cols]:
             display_name = get_feature_display_name(feat, config_features)
-            data_min, data_max = get_feature_range(processed_data, feat)
-            p1, p99 = get_feature_percentiles(processed_data, feat)
+            data_min, data_max = get_feature_range(train_data, feat)
+            p1, p99 = get_feature_percentiles(train_data, feat)
             baseline_val = baseline_values.get(feat, np.nan)
 
-            # Default to baseline if available, else midpoint of P1-P99
+            # Default to baseline if available, else midpoint of training P1-P99
             if pd.notna(baseline_val):
                 default_val = float(baseline_val)
             else:
                 default_val = (p1 + p99) / 2
 
-            # Slider with full data range
+            # B9 (plan v3): clamp observed defaults into the training band so a
+            # slider can never silently start outside guardrail support.
+            clamped = float(np.clip(default_val, data_min, data_max))
+            if abs(clamped - default_val) > 1e-9:
+                st.caption(
+                    f"Observed value {default_val:.1f} is outside the training "
+                    f"range [{data_min:.1f}, {data_max:.1f}]; slider clamped."
+                )
+            default_val = clamped
+
+            # Slider with full observed training range
             new_val = st.slider(
                 f"{display_name}",
                 min_value=float(data_min),
                 max_value=float(data_max),
                 value=float(default_val),
                 step=(data_max - data_min) / 100,
-                help=f"Range: {data_min:.1f}–{data_max:.1f} | P1–P99: {p1:.1f}–{p99:.1f}",
+                help=f"Training range: {data_min:.1f}–{data_max:.1f} | "
+                     f"training P1–P99: {p1:.1f}–{p99:.1f}",
                 key=f"slider_{feat}",
             )
             scenario_changes[feat] = new_val
 
-            # Check extrapolation (outside P1-P99)
-            if new_val < p1 or new_val > p99:
-                all_warnings.append(
-                    f"**Warning:** {display_name} = {new_val:.1f} is outside the "
-                    f"historical P1–P99 range ({p1:.1f}–{p99:.1f}). "
-                    f"The result may be unreliable due to extrapolation."
-                )
-
-    # Display warnings
-    if all_warnings:
-        for w in all_warnings:
-            st.warning(w)
+    # Display warnings (single source of truth, training-calibrated)
+    for w in check_extrapolation_warning(scenario_changes, train_data):
+        st.warning(w)
 
     # Prepare input and predict
     scenario_input = prepare_scenario_input(baseline_values, scenario_changes, feature_names)
@@ -862,32 +1000,35 @@ def render_scenario_page(
             help="Scenario minus baseline (percentage points)"
         )
 
-    # Show feature contribution to change (approximation using feature importance)
+    # Show what actually moved the prediction: a TRUE one-at-a-time model delta.
+    # H1: multiplying a permutation importance by a raw unit change is
+    # dimensionally meaningless, so that heuristic ("Approx. Contribution")
+    # is removed entirely; each row now re-runs the deployed model.
     st.subheader("🔬 Indicators Driving the Change")
     change_contributions = []
     for feat, new_val in scenario_changes.items():
         baseline_val = baseline_values.get(feat, np.nan)
-        if pd.notna(baseline_val):
-            change = new_val - baseline_val
-            importance = feature_importance.get(feat, 0)
-            # Approximate contribution: importance * direction * normalized change
-            contrib = importance * change
-            change_contributions.append({
-                "Feature": get_feature_display_name(feat, config_features),
-                "Baseline": f"{baseline_val:.1f}",
-                "Scenario": f"{new_val:.1f}",
-                "Change": f"{change:+.1f}",
-                "Importance": f"{importance:.3f}",
-                "Approx. Contribution": f"{contrib:+.3f}",
-            })
+        if pd.isna(baseline_val):
+            continue
+        probe = baseline_input.copy()
+        probe[feat] = new_val
+        delta = float(pipeline.predict(probe)[0] - baseline_pred)
+        change_contributions.append({
+            "Feature": get_feature_display_name(feat, config_features),
+            "Baseline": f"{baseline_val:.1f}",
+            "Scenario": f"{new_val:.1f}",
+            "Change": f"{new_val - float(baseline_val):+.1f}",
+            "Individual effect (pp)": f"{delta:+.3f}",
+        })
 
     if change_contributions:
         contrib_df = pd.DataFrame(change_contributions)
-        contrib_df = contrib_df.sort_values("Approx. Contribution", key=abs, ascending=False)
+        contrib_df = contrib_df.sort_values("Individual effect (pp)", key=abs, ascending=False)
         st.dataframe(contrib_df, use_container_width=True, hide_index=True)
         st.caption(
-            "Note: 'Approx. Contribution' is a rough estimate (importance × change) "
-            "and does not account for feature interactions or non-linear effects."
+            "Each row re-runs the model changing only that indicator. Individual "
+            "effects need not sum to the total because the model is non-linear. "
+            "These are conditional prediction deltas, not causal effects."
         )
 
     # Causal disclaimer on Scenario page

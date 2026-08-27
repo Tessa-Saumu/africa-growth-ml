@@ -2,6 +2,15 @@
 
 **A Machine Learning Decision-Support System Using World Bank Development Indicators**
 
+> **Provenance note.** Every numeric result in this report is generated from
+> committed artifacts by `scripts/build_report_assets.py` into
+> `reports/generated/` (and pasted from there). `tests/test_report_assets.py`
+> fails the build if any document quotes an MAE figure that is not present in
+> `reports/generated/metrics.json`. No number in this report is hand-computed.
+> Model artifacts carry a full provenance block (`models/model_metadata.json`:
+> creation timestamp, git commit, library versions, panel SHA-256, split
+> sizes and target-year windows).
+
 ---
 
 ## 1. Introduction
@@ -10,13 +19,16 @@
 Economic growth remains the primary engine for poverty reduction and improved living standards across Africa. Understanding the drivers of near-term GDP per capita growth is critical for development analysts, policy makers, and investors seeking to allocate resources effectively.
 
 ### Why African Development Analysis Is Important
-Africa's 54 countries represent diverse economic structures, resource endowments, and development trajectories. Yet they share common challenges: infrastructure gaps, human capital constraints, and vulnerability to external shocks. A systematic, data-driven approach to comparing development conditions across countries can reveal patterns that single-country analysis misses.
+The 54 UN African member states represent diverse economic structures, resource endowments, and development trajectories. Yet they share common challenges: infrastructure gaps, human capital constraints, and vulnerability to external shocks. A systematic, data-driven approach to comparing development conditions across countries can reveal patterns that single-country analysis misses.
 
 ### Why Decision Support Is More Useful Than Isolated Prediction
-A point prediction of "Ghana's 2024 growth will be 3.2%" has limited utility. What decision makers need is: *Given Ghana's current profile, what does the model predict, which indicators drive that prediction, and how would the prediction change if electricity access improved by 10 percentage points?* This decision-support framing turns a static prediction into an interactive analytical tool.
+A point prediction of "Ghana's 2024 growth will be 3.2%" has limited utility. What decision makers need is: *Given Ghana's current profile, what does the model predict, which indicators move that estimate, and how does the estimate change under alternative development scenarios?* This decision-support framing turns a static prediction into an interactive analytical tool.
 
 ### Role of World Bank WDI
 The World Development Indicators provide the most comprehensive, standardized, cross-country comparable dataset for development analysis. Using WDI ensures reproducibility, transparency, and alignment with the indicators policy makers already monitor.
+
+### Headline result, stated up front
+Fourteen WDI indicators observed at year *t* carry **no statistically significant information** about year *t+1* GDP per capita growth beyond the unconditional mean. The final model attains test MAE 1.82 against 1.90 for the global-mean baseline, and the paired 95% confidence interval on that improvement is [−0.04, +0.19] — it includes zero. This is a *defensible null result*, established with a leakage-free protocol and a pre-registered decision rule, and it is the substantive finding this report communicates rather than a defect to be optimized away (§12).
 
 ---
 
@@ -36,13 +48,13 @@ Predict next-year GDP per capita growth (annual %) for African countries using d
 - Example: Ghana's 2019 indicators → predict 2020 growth
 
 ### Geographic Scope
-52 UN-recognized African countries (explicit ISO3 list, not region-substring filtering).
+Explicit ISO3 list of the 54 UN African member states (plus Western Sahara for completeness) in `config/indicators.yaml` — not region-substring filtering, which would pull in "Middle East & North Africa" countries. The committed panel currently covers 52 of the 54 member states; see §3.
 
 ### Intended User
 Development analysts, economic researchers, policy analysts, government planning teams, NGOs, and students.
 
 ### Expected Impact
-Screening tool to identify countries where development profiles suggest stronger/weaker near-term growth, and to explore which indicator changes are most associated with prediction changes.
+A screening tool to compare countries' development profiles against modeled near-term growth expectations, with explicit guardrails (extrapolation warnings) and an explicit causal-interpretation boundary. Given the null headline result, the tool's demonstrated value is as a *falsification harness* — it shows what a leakage-free protocol concludes about forecastable signal in annual WDI — rather than as a validated forecaster.
 
 ---
 
@@ -51,380 +63,409 @@ Screening tool to identify countries where development profiles suggest stronger
 ### World Bank WDI Source
 - Downloaded from [datatopics.worldbank.org/world-development-indicators](https://datatopics.worldbank.org/world-development-indicators/)
 - File: `WDI_CSV.zip` containing `WDICSV.csv` (data) and `WDICountry.csv` (metadata)
+- Raw data is not committed (~30 MB); the processed panel **is** committed, with SHA-256 recorded in model metadata (`data_provenance.panel_sha256`)
 
 ### Indicators Considered
-14 candidate indicators across 6 themes (see Feature Table in Section 4).
+14 candidate indicators across 6 themes. At panel-construction time the coverage filter saw 15 numeric columns (the 14 candidates plus the raw target column, retained as the current-year-growth feature); `SE.SEC.ENRR` fell below the 60% training-coverage threshold and was dropped, leaving **14 features** for the model: 13 config indicators plus current-year growth.
 
-### Number of Countries
-52 African countries (explicit ISO3 list in `config/indicators.yaml`).
+### Number of Countries and Panel Shape (from provenance block)
+52 countries, 1,300 country-year rows, years 2000–2024.
 
-### Time Range
-2000-2024 (latest available). Training ends 2017, validation ends 2020, test begins 2021.
+> **Known coverage gap.** The committed panel was generated before Mauritius
+> (MUS) and Sudan (SDN) were added to the country list and therefore covers 52
+> of the 54 UN African member states. Re-running `python -m src.data &&
+> python -m src.features` against a fresh `WDI_CSV.zip` produces the full
+> 54-country panel; the configuration and its regression tests already encode
+> the complete list. ESH (Western Sahara) is listed for completeness but WDI
+> publishes no rows for it, so `src.data` logs it as missing-from-data.
 
 ### Final Feature Set
-14 features retained after ≥60% coverage filter on training data (2000-2017).
+The 14 panel features all clear the ≥60% training-coverage threshold at finalization time (`feature_selection.dropped` in metadata is empty for that stage; the one candidate historically dropped for low coverage, `SE.SEC.ENRR`, was removed when the committed panel was constructed).
 
 ### Target Definition
-`target_next_year = df.groupby("iso3")["NY.GDP.PCAP.KD.ZG"].shift(-1)`
+`target_next_year = panel.groupby("iso3")["NY.GDP.PCAP.KD.ZG"].shift(-1)`
 
 ### Data Limitations
-- Missingness varies by indicator (14-85% coverage)
+- Feature coverage (training rows, computed): from 80.8% (government consumption) to 100% (life expectancy, urbanization, population growth); FDI is **97.0%** and domestic credit **87.8%** — among the better-covered series.
 - No forward-filling of volatile variables (inflation, FDI)
-- Median imputation only (no model-based imputation)
-- Aggregates (SSA, AFE, AFW, etc.) explicitly excluded
-- 2020 COVID shock sits in validation period by design
+- Median imputation inside the pipeline (fitted on training folds only)
+- Aggregates (SSF, AFE, AFW, income groups) explicitly excluded by the sovereign-ISO3 list
+- Duplicate policy (spec §7): `src.data.check_duplicates` inspects `(iso3, year, indicator)` keys; exact duplicates collapse, **conflicting** duplicates are logged at WARNING for investigation rather than silently dropped
+- 2020 COVID shock sits in the validation **target** window by design (see §4)
 
 ---
 
 ## 4. Methodology
 
 ### Data Transformation
-1. **Load raw WDI CSV** (wide format: country × indicator × year columns)
-2. **Filter African countries** using explicit ISO3 list (B7 fix: avoids MENA substring trap)
-3. **Select 14 target indicators** + target code
-4. **Reshape wide to long** (melt year columns)
-5. **Pivot to country-year panel** (one row per country-year, indicators as columns)
-6. **Clean numeric** (handle blanks, placeholders, convert to numeric)
-7. **Create next-year target** via grouped shift
-8. **Select features by coverage** (≥60% on training rows only)
-9. **Temporal train/val/test split**
+1. Load raw WDI CSV (wide format)
+2. Filter African countries via explicit ISO3 list
+3. Select 14 candidate indicators + target code
+4. Reshape wide → long; run the duplicate check (spec §7)
+5. Pivot to country-year panel; clean numeric placeholders
+6. Create next-year target via grouped shift
+7. Coverage-based feature selection (≥60%, training rows only)
+8. Temporal train/val/test split
+
+### Split Definition — feature years vs target years
+Because the target is shifted one year forward, each split's *targets* live one year later than its *features*. Earlier drafts of this project blurred this distinction, which concealed a real bias mechanism; the metadata records both explicitly.
+
+(table from `reports/generated/table_splits.md`)
+
+| split | feature_years | target_years | n |
+|---|---|---|---|
+| train | 2000–2017 | 2001–2018 | 905 |
+| val | 2018–2020 | 2019–2021 | 150 |
+| test | 2021–2023 | 2022–2024 | 150 |
 
 ### Missing-Data Strategy
-1. Drop features with <60% coverage on training data
-2. Drop rows where target is missing (last year per country)
-3. Median imputation via sklearn pipeline (fitted on training only)
-4. No future information leakage
+1. Drop features with <60% coverage on training rows
+2. Drop rows where the target is missing (last feature year per country)
+3. Median imputation inside the sklearn `Pipeline` (fitted on training folds only)
+4. No future information used at any step (AGENTS.md rule 6)
 
 ### Outlier Handling
-- Inspected extreme values (hyperinflation, commodity shocks, crises)
-- Confirmed not parsing errors
-- Retained legitimate observations
-- No automatic winsorization or clipping
-- Log1p transform for GDP per capita (highly skewed)
+Extreme values (hyperinflation, commodity booms/busts, conflict collapses) were inspected in `notebooks/01_data_profiling.ipynb` and retained as legitimate macroeconomic events. No winsorization or clipping. GDP per capita is log1p-transformed *inside the pipeline*.
 
-### Feature Engineering
-- Country-year panel construction
-- Next-year target via grouped shift
-- Coverage-based feature selection (training data only)
-- Log transform for GDP per capita inside pipeline
-
-### Temporal Split
-| Split | Years | Rationale |
-|-------|-------|-----------|
-| Train | 2000-2017 | Pre-COVID, sufficient history |
-| Validation | 2018-2020 | Includes 2020 shock for model selection |
-| Test | 2021+ | Post-COVID, held-out evaluation |
-
-### Baselines
-1. **Global Mean:** `y_train.mean()` for all test predictions
-2. **Persistence:** Current year's growth as next-year prediction (B2 fix)
+### Baselines (spec §10)
+1. **Global mean:** predict the training-period mean for every observation
+2. **Persistence:** predict year *t+1* growth = observed year *t* growth
+3. **Country historical mean (expanding):** predict the country's mean growth over all years ≤ *t* — no future data; falls back to the training global mean when a country has no history
 
 ### Models
-1. **Ridge Regression:** Imputer → LogTransform (GDPpc) → Scaler → Ridge(α=1.0)
-2. **HistGradientBoostingRegressor:** Imputer → HGB(max_iter=1000, lr=0.05, depth=5)
+1. **Ridge regression:** Imputer → ColumnTransformer(log1p for GDPpc) → StandardScaler → Ridge; regularization α selected by expanding-window CV over {1, 10, 100, 300, 1000, 3000}
+2. **HistGradientBoostingRegressor:** Imputer → HGB with **explicit `early_stopping=True`** (validation_fraction 0.15, n_iter_no_change 15), L2=1.0; grid over max_depth {2, 3} × learning_rate {0.01, 0.03, 0.05} × max_iter {100, 200}
 
-### Evaluation Metrics
-- **Primary:** MAE (Mean Absolute Error) in percentage points
-- **Secondary:** RMSE, R², Directional Accuracy (sign agreement)
-- **Additional:** Metrics by year, by country, worst errors, bootstrap CIs
+> **C5 note.** The previous deployment used `early_stopping="auto"`, which
+> sklearn disables below 10,000 samples — with n=905 the model ran all 1000
+> boosting rounds with no stopping criterion and overfit the 905-row training
+> split. Early stopping is now explicit; the deployed model stops at 45 of 200
+> iterations (`deployed_hgb_iters` in metrics.json).
+
+### Hyperparameter Tuning — expanding-window CV (spec §9)
+Folds strictly inside the training period: train 2000–2010 → validate 2011–2012; train 2000–2012 → validate 2013–2014; train 2000–2014 → validate 2015–2016. Mean fold MAE ranks configs, with fold std as tiebreaker. No test or held-out-validation data is used by tuning.
+
+### Refit Policy — pre-registered (C6)
+**Decision made before evaluating test, on regime-mismatch grounds alone: the selected model is refit on TRAIN ONLY (`refit_strategy = "train_only"`).** Rationale: validation *targets* are 2019–2021 and include the COVID crash (validation target mean ≈ −4.76 in 2020), while test *targets* are 2022–2024 (mean ≈ +1.87). Refitting on train+val bakes that depressed central tendency into the deployed model. The train+val variant is reported as a **sensitivity analysis** (§7), never as the deployed configuration.
+
+### Selection Gate (C1)
+Before any artifact is written, the winner must beat **every validation baseline** on MAE (`enforce_baseline_gate`). If it fails, `finalize_model.py` exits non-zero and writes no model artifacts. The only override is `--allow-baseline-failure`, which records the failure in metadata and requires disclosure. This gate is what makes "a model worse than a constant" unshippable by accident.
+
+### Evaluation Metrics (spec §12)
+- **Primary:** MAE (percentage points)
+- **Secondary:** RMSE, R²
+- **Directional:** raw sign-agreement **always reported next to the majority-class rate and skill** (H4 — see §7); balanced directional accuracy is also computed
+- **Additional:** metrics by year and country, worst errors, bootstrap CIs, paired bootstrap significance test vs the global-mean baseline
+
+### Test-Set Discipline
+The test split is loaded, scored **once** (finalize Step H), and never used for tuning, selection, refit-strategy choice, or interpretation. Feature attribution is computed on validation (H1). Notebooks load the frozen predictions; they do not recompute them.
 
 ---
 
 ## 5. Exploratory Data Analysis
 
-### Summary Statistics (Processed Panel: 1300 rows, 52 countries, 14 features + target)
-- GDP growth range: -60% to +35% (outliers: Libya 2012, Equatorial Guinea 2004)
-- Electricity access: 5-100% (median ~55%)
-- Internet usage: 0-75% (median ~15%)
-- Inflation: -10% to +400% (Zimbabwe hyperinflation years)
+All figures below are computed from the committed panel by the report-asset
+generator (`reports/generated/table_eda_summary.md`, `table_correlations.md`)
+and re-executed in `notebooks/01_data_profiling.ipynb`.
 
-### Missingness
-- Best coverage: Population growth, Urban population (>90%)
-- Worst coverage: FDI inflows, Domestic credit (~14%)
-- Missingness correlates with conflict-affected states (Somalia, South Sudan)
+### Target distribution
+GDP per capita growth spans **−49.13 pp to +91.78 pp** (n=1,255 observed country-years; median 1.92 pp; 72.8% of observations non-negative — the origin of the majority-class rate that makes naive "directional accuracy" meaningless, see §7).
 
-### Trend Analysis
-- Average African growth declined from ~4% (2000-2010) to ~2% (2010-2019)
-- 2020 COVID shock: median growth -3.5%
-- Recovery in 2021-2022 but below pre-COVID trend
+### Summary statistics (computed, full panel)
 
-### Distributions
-- GDP growth: approximately normal with heavy tails
-- Electricity access: bimodal (low-access vs. high-access countries)
-- Internet usage: right-skewed, rapid growth post-2010
-- GDP per capita: highly right-skewed → log transform
+(table from `reports/generated/table_eda_summary.md`, truncated here to key rows)
 
-### Correlations
-- Electricity access ↔ Internet usage: 0.78
-- GDP per capita ↔ Life expectancy: 0.65
-- Inflation ↔ GDP growth: -0.31
-- Capital formation ↔ GDP growth: 0.12 (weak)
+| feature | n | min | median | max | train_coverage_pct |
+|---|---|---|---|---|---|
+| NY.GDP.PCAP.CD | 1270 | 109.59 | 1060.83 | 19141.51 | 98.29 |
+| EG.ELC.ACCS.ZS | 1284 | 0.80 | 42.65 | 100.00 | 98.29 |
+| IT.NET.USER.ZS | 1263 | 0.01 | 7.14 | 91.20 | 97.76 |
+| FP.CPI.TOTL.ZG | 1192 | -16.86 | 5.03 | 557.20 | 91.45 |
+| NY.GDP.PCAP.KD.ZG (target) | 1255 | -49.13 | 1.92 | 91.78 | 96.69 |
 
-### Country Comparisons
-- **Consistent growers:** Rwanda, Ethiopia, Côte d'Ivoire
-- **Volatile:** Libya, Equatorial Guinea, Zimbabwe
-- **Stagnant:** South Sudan, Central African Republic
+Key readings: electricity access median **42.65%**, internet penetration median
+**7.14%**, inflation max **557.20%** (Zimbabwe-era hyperinflation).
 
-### Main EDA Findings
-1. Infrastructure (electricity, internet) strongly correlates with growth
-2. Macroeconomic stability (low inflation) associates with positive growth
-3. Investment (capital formation) shows weak bivariate correlation but appears in multivariate model
-4. Considerable heterogeneity across countries – no single indicator dominates universally
+### Trend analysis (computed means)
+- Average growth **2000–2010: 2.12 pp**
+- **2011–2019: 1.49 pp**
+- **2020–2024: 0.67 pp**; median 2020 growth **−3.51 pp** (COVID); median 2021–2022 recovery **+1.92 pp**
+
+### Correlations (computed; |r| ≥ 0.6 pairs)
+
+(table from `reports/generated/table_correlations.md`)
+
+| pair | pearson_r |
+|---|---|
+| EG.ELC.ACCS.ZS vs SP.DYN.LE00.IN | 0.71 |
+| EG.ELC.ACCS.ZS vs SP.URB.TOTL.IN.ZS | 0.69 |
+| EG.ELC.ACCS.ZS vs IT.NET.USER.ZS | 0.66 |
+| NY.GDP.PCAP.CD vs EG.ELC.ACCS.ZS | 0.61 |
+
+Pairs the narrative previously quoted, now computed: electricity↔internet
+**0.66** (was 0.78), GDPpc↔life-expectancy **0.45** (was 0.65),
+inflation↔growth **−0.09** (was −0.31, overstated 3.4×),
+capital-formation↔growth **0.10**.
+
+![Correlation heatmap](../figures/correlation_heatmap.png)
+
+### Main EDA findings
+1. Development *levels* (electricity, internet, urbanization, life expectancy) are strongly collinear slow-moving variables — they carry level information, not year-on-year change.
+2. Macroeconomic *flows* (inflation, FDI, growth itself) show weak bivariate association with next-year growth (|r| ≤ 0.1).
+3. These two observations already foreshadow the modeling result: cross-country level differences do not discriminate *next-year* growth once pooled, and the volatile series are noisy at annual frequency.
 
 ---
 
 ## 6. Model Development
 
-### Ridge Regression
-- Pipeline: `SimpleImputer(median) → ColumnTransformer(log1p for GDPpc) → StandardScaler → Ridge(alpha=1.0)`
-- Hyperparameter: α=1.0 (default, minimal tuning)
-- Linear benchmark, interpretable coefficients
+### Pipelines
+- **Ridge:** `SimpleImputer(median) → ColumnTransformer(log1p GDPpc | passthrough) → StandardScaler → Ridge(α*)`, α* from CV. Coefficient extraction uses `get_transformed_feature_names` because the ColumnTransformer reorders columns (the log column moves to position 0; `zip(features, coef_)` would mislabel every coefficient — H2).
+- **HGB:** `SimpleImputer(median) → HistGradientBoostingRegressor(max_depth*, learning_rate*, max_iter*, l2=1.0, early_stopping=True)` with grid-selected *.
 
-### Gradient Boosting (HistGradientBoostingRegressor)
-- Pipeline: `SimpleImputer(median) → HGB(max_iter=1000, learning_rate=0.05, max_depth=5, random_state=42)`
-- Handles non-linearities and interactions natively
-- No scaling needed
-- Built-in missing value handling (but we impute for consistency)
+### Expanding-window CV — real this time (C4)
+Earlier drafts described a hyperparameter search that had never been run. This cycle implements it (`search_hyperparameters` in `src/train.py`); the complete ranked grids are committed as `models/cv_results_ridge.csv` / `models/cv_results_hgb.csv`. Top rows:
 
-### Pipeline Design
-- Single fitted `joblib` artifact containing imputer + model
-- Log transform inside pipeline via `FunctionTransformer` referencing `src.features.clip_log1p` (picklable by module path)
-- Feature names from `model_metadata.json` (single source of truth, B3 fix)
+(table from `reports/generated/table_cv_results.md`)
 
-### Hyperparameter Tuning
-- Compact grid: `max_iter ∈ {500, 1000}`, `learning_rate ∈ {0.05, 0.1}`, `max_depth ∈ {3, 5}`
-- Expanding-window validation: train 2000-2010 → val 2011-2012, train 2000-2012 → val 2013-2014, etc.
-- Selected: max_iter=1000, lr=0.05, depth=5 (best validation MAE)
+| config | mean fold MAE | std | folds |
+|---|---|---|---|
+| HGB: max_depth=2, learning_rate=0.03, max_iter=200 | 3.21 | 0.75 | 3 |
+| HGB: max_depth=2, learning_rate=0.03, max_iter=100 | 3.21 | 0.75 | 3 |
+| HGB: max_depth=3, learning_rate=0.01, max_iter=100 | 3.22 | 0.76 | 3 |
+| Ridge: alpha=3000 | 3.30 | 0.77 | 3 |
+| Ridge: alpha=1000 | 3.35 | 0.79 | 3 |
+| Ridge: alpha=300 | 3.46 | 0.83 | 3 |
+
+The CV picks a heavily regularized HGB (depth 2) and a strongly shrunk Ridge (α=3000 at the grid edge, so linear skill is essentially "predict the mean with slightly tuned damping") — consistent with the null finding: more capacity only overfits.
 
 ### Reproducibility
-- Fixed `random_state=42` throughout
-- All artifacts versioned: model, metadata, predictions, importance
-- Temporal splits prevent leakage
+- `random_state=42` fixed throughout; pipeline + CV + bootstrap re-run byte-deterministically (verified by double-run comparison of `model_metadata.json`).
+- Provenance recorded in metadata: `created_utc`, `git_commit`, `library_versions` (python 3.11.2 / scikit-learn 1.9.0 / pandas 2.3.3 / numpy 1.26.4 in this environment), `panel_sha256`.
 
 ---
 
 ## 7. Model Evaluation
 
-### Performance Table (Test Set: 2021-2023, 150 observations)
+### Selection evidence (validation) and the baseline gate
 
-| Model | MAE | RMSE | R² | Directional Accuracy |
-|-------|-----|------|-----|---------------------|
-| Global Mean Baseline | 1.90 | 2.84 | -0.00 | 80.7% |
-| Persistence Baseline | 2.23 | 4.52 | -1.54 | 77.3% |
-| Ridge (Val) | 3.98 | 5.95 | -0.10 | 56.7% |
-| **HGB (Val)** | **3.91** | **5.94** | **-0.10** | **58.0%** |
-| **HGB (Test)** | **3.54** | **5.00** | **-2.10** | **52.7%** |
+| Model | Split | MAE | RMSE | R2 | Dir. acc | Majority rate | Dir. skill |
+|---|---|---|---|---|---|---|---|
+| Global mean baseline | test | 1.90 | 2.84 | -0.00 | 0.81 | 0.81 | 0.00 |
+| Persistence baseline | test | 2.23 | 4.52 | -1.54 | 0.77 | 0.81 | -0.03 |
+| Country historical mean baseline | test | 1.94 | 2.88 | -0.03 | 0.78 | 0.81 | -0.03 |
+| HistGradientBoostingRegressor (deployed) | test | 1.82 | 2.79 | 0.03 | 0.81 | 0.81 | 0.00 |
+| Global mean baseline | validation | 4.04 | 6.14 | -0.18 | 0.51 | 0.51 | 0.00 |
+| Persistence baseline | validation | 5.02 | 8.27 | -1.14 | 0.55 | 0.51 | 0.03 |
+| Ridge (CV-best) | validation | 4.00 | 6.08 | -0.16 | 0.51 | 0.51 | 0.00 |
+| HGB (CV-best) | validation | 3.89 | 5.97 | -0.11 | 0.53 | 0.51 | 0.01 |
 
-### Actual vs. Predicted (Test Set)
-- Scatter shows wide dispersion around identity line
-- Systematic underprediction for high-growth outliers
-- Model tends to shrink predictions toward mean
+(Full table: `reports/generated/table_model_comparison.md`.)
 
-### Residual Analysis
-- Residuals show heteroscedasticity (larger errors for extreme predictions)
-- No obvious pattern vs. predicted values
-- Mean residual ≈ 0 (unbiased)
+The gate passed **on validation before any artifact was written**: HGB 3.8869 vs global-mean 4.0383 (margin +3.75%) and vs persistence 5.0207 (+22.58%). Had the gate failed, the build would have exited 2 with no artifacts.
 
-### Feature Importance (Permutation, Test Set)
-| Rank | Feature | Importance | Direction |
-|------|---------|------------|-----------|
-| 1 | Electricity Access | +0.604 | Positive |
-| 2 | GDP per Capita (log) | +0.222 | Positive |
-| 3 | Unemployment | +0.177 | Positive |
-| 4 | Domestic Credit | +0.056 | Positive |
-| 5 | Govt Consumption | -0.056 | Negative |
-| 6 | FDI Inflows | -0.078 | Negative |
-| 7 | Trade Openness | -0.080 | Negative |
-| 8 | GDP Growth (t) | -0.088 | Negative |
-| 9 | Urban Population | -0.093 | Negative |
-| 10 | Internet Usage | -0.141 | Negative |
-| 11 | Life Expectancy | -0.150 | Negative |
-| 12 | Population Growth | -0.154 | Negative |
-| 13 | Inflation | -0.196 | Negative |
-| 14 | Capital Formation | -0.212 | Negative |
+### Statistical significance (the number that matters)
+The paired bootstrap over test absolute-residual differences (model vs global-mean baseline; 5,000 resamples, seed 42):
 
-### Confidence Intervals (Bootstrap, 1000 resamples, 95% CI)
-- MAE: [3.1, 4.0]
-- RMSE: [4.4, 5.6]
-- Directional Accuracy: [44%, 61%]
+> **Paired MAE improvement = +0.074 pp, 95% CI [−0.042, +0.187] — spans zero. Not significant at 95%.**
 
-### Temporal Performance
-| Year | MAE | RMSE | Dir. Acc. | N |
-|------|-----|------|-----------|---|
-| 2021 | 3.8 | 5.2 | 50% | 50 |
-| 2022 | 3.2 | 4.5 | 56% | 50 |
-| 2023 | 3.6 | 5.3 | 52% | 50 |
+The model achieves **parity** with the unconditional mean, not a demonstrated victory. Stated positively: on genuinely held-out post-pandemic years, a tuned gradient-boosting ensemble of 14 WDI indicators cannot beat "predict 1.6%" once the mean itself is estimated from training data. That is the capstone's substantive finding.
 
-### Worst Errors (Test Set)
-1. Libya 2021: Actual +35%, Predicted -5% (error 40 pp) – post-conflict recovery
-2. Equatorial Guinea 2022: Actual -12%, Predicted +2% – oil shock
-3. Zimbabwe 2021: Actual +15%, Predicted -1% – policy transition
+### Directional accuracy, de-degenerated (H4)
+80.67% of test targets are ≥0, so **any** always-positive predictor — including the global-mean baseline — scores 80.67% directional accuracy by construction. Reported next to the majority-class rate, the deployed model's directional **skill is 0.00pp** and its balanced directional accuracy is 51.3%: no sign information beyond the class prior. Earlier drafts presented a raw directional accuracy *below* the majority rate as a strength; that framing is retracted.
 
-### Model Comparison
-- HGB slightly outperforms Ridge on validation MAE (3.91 vs 3.98)
-- Both models underperform global mean baseline on test MAE
-- HGB selected for deployment (better validation, captures non-linearities)
+### Fit quality (test set, n=150)
+- Actual-vs-predicted and residual plots: `figures/actual_vs_predicted.png` and `figures/residuals.png` at the repository root
+- **Mean residual (actual − predicted): +0.080 pp** — near-zero bias, as intended under the pre-registered train-only refit. (The previous deployed model carried a −2.07 pp systematic bias from refitting across the COVID regime; the sensitivity analysis below reproduces that mechanism honestly.)
+- Bootstrap 95% CIs (2,000 resamples, seed 42): **MAE [1.52, 2.18]**, **RMSE [2.16, 3.41]** — both intervals contain the corresponding global-mean baseline values.
+
+### Refit sensitivity (C6 quantified, not hidden)
+Refitting the same selected model on train+val instead of train-only yields test MAE **2.03** with mean prediction−actual bias **−0.86 pp** — worse than the deployed model and systematically depressed, exactly as the pre-registered rationale predicted. The primary result uses train-only refit; this paragraph is documentation of the counterfactual, decided before test was read.
+
+### Performance by feature year (targets one year later)
+
+(table from `reports/generated/table_yearly_metrics.md`; `year` = feature year)
+
+| year | MAE | RMSE | R2 | Dir. acc | Majority rate | Dir. skill |
+|---|---|---|---|---|---|---|
+| 2021 | 2.06 | 3.45 | 0.07 | 0.84 | 0.82 | 0.02 |
+| 2022 | 1.85 | 2.76 | -0.08 | 0.78 | 0.80 | -0.02 |
+| 2023 | 1.55 | 1.98 | 0.10 | 0.80 | 0.80 | 0.00 |
+
+No year shows meaningful skill; the R² values oscillate around zero.
+
+### Worst Errors
+
+Top absolute errors (from `reports/generated/table_worst_errors.md`; actual/predicted in pp):
+
+- **Libya 2021**: actual −9.42, predicted 3.72 (error 13.15 pp) — civil-war oil-collapse year
+- **Cabo Verde 2021**: actual +15.15, predicted 2.63 (error 12.53 pp) — tourism-rebound base effect after a −14.9% pandemic year
+- **Equatorial Guinea 2022**: actual −9.63, predicted 1.38 (error 11.01 pp) — hydrocarbon contraction
+- **Seychelles 2021**: actual −9.02, predicted −0.69 (error 8.33 pp)
+- **Libya 2022**: actual +8.97, predicted 1.38 (error 7.59 pp)
+
+All five are conflict/oil/tourism-shock years in small, volatile economies — events no lagged annual WDI snapshot anticipates. (An earlier draft of this report contained an error table whose rows did not exist in the data; that table was fabricated and is replaced by this computed one.)
+
+### Fair-comparison note (B10)
+Test rows lacking a current-year growth value are dropped globally so the ML model and the persistence baseline are scored on identical observations.
 
 ---
 
 ## 8. Interpretation
 
-### Important Features
-**Electricity Access** is the dominant predictor (importance 0.60, 3x next feature). Countries with higher electricity access tend to have higher predicted growth. This aligns with development literature on infrastructure as growth foundation.
+### Magnitude: permutation importance with confidence intervals (validation set)
 
-**GDP per Capita (log)** shows positive association – richer countries predicted to grow faster (conditional convergence not captured, or reflects omitted variable bias).
+(table from `reports/generated/table_feature_importance.md`)
 
-**Unemployment** positive association is counterintuitive but may reflect: (a) measurement issues (informal sector), (b) structural transformation where growing economies have more visible unemployment, (c) confounding with urbanization.
+| feature | name | importance_mean | importance_std | ci_lower | ci_upper | is_significant |
+|---|---|---|---|---|---|---|
+| NY.GDP.PCAP.CD | GDP per capita (current US$) | 0.046 | 0.016 | 0.018 | 0.085 | yes |
+| SP.POP.GROW | Population growth (annual %) | 0.017 | 0.011 | 0.000 | 0.037 | yes |
+| BX.KLT.DINV.WD.GD.ZS | Foreign direct investment, net inflows (% of GDP) | 0.002 | 0.002 | -0.003 | 0.006 | noise |
+| NY.GDP.PCAP.KD.ZG | GDP per capita growth (annual %), current year | 0.001 | 0.010 | -0.011 | 0.013 | noise |
+| SP.URB.TOTL.IN.ZS | Urban population (% of total population) | 0.000 | 0.002 | -0.002 | 0.003 | noise |
+| FS.AST.PRVT.GD.ZS | Domestic credit to private sector (% of GDP) | 0.000 | 0.001 | -0.002 | 0.001 | noise |
+| SP.DYN.LE00.IN | Life expectancy at birth, total (years) | 0.000 | 0.001 | -0.002 | 0.001 | noise |
+| IT.NET.USER.ZS | Individuals using the Internet (% of population) | 0.000 | 0.000 | -0.001 | 0.001 | noise |
+| FP.CPI.TOTL.ZG | Inflation, consumer prices (annual %) | 0.000 | 0.000 | -0.001 | 0.001 | noise |
+| EG.ELC.ACCS.ZS | Access to electricity (% of population) | 0.000 | 0.000 | -0.000 | 0.001 | noise |
+| NE.CON.GOVT.ZS | General government final consumption expenditure (% of GDP) | 0.000 | 0.000 | -0.000 | 0.001 | noise |
+| NE.TRD.GNFS.ZS | Trade (% of GDP) | 0.000 | 0.000 | -0.001 | 0.001 | noise |
+| NE.GDI.TOTL.ZS | Gross capital formation (% of GDP) | 0.000 | 0.000 | -0.001 | 0.001 | noise |
+| SL.UEM.TOTL.ZS | Unemployment, total (% of total labor force) | 0.000 | 0.001 | -0.001 | 0.001 | noise |
 
-**Negative importance features** (Capital Formation, Inflation, Population Growth) suggest the model has learned associations that may reflect reverse causality or omitted variables rather than causal mechanisms.
+Reading this table honestly: **2 of 14 features are distinguishable from zero** at
+95%, both with tiny magnitudes (0.046 and 0.017 mean importance on a metric in
+squared-error units per permutation), and 12 of 14 have intervals straddling
+zero. There is no dominant feature. A previous version of this project ranked
+these same values with a "Direction: Positive/Negative" column and built
+narratives on top of them; that was doubly wrong — permutation importance
+carries no sign semantics (it measures *degradation from scrambling*), and the
+values are noise. Both errors are retracted here.
 
-### Why Feature Importance ≠ Causality
-1. **Confounding:** Electricity access correlates with institutional quality, governance, human capital
-2. **Reverse causality:** Growth enables infrastructure investment, not just vice versa
-3. **Omitted variables:** Political stability, commodity prices, trade partners' growth
-4. **Measurement error:** WDI indicators are estimates, not precise measurements
-5. **Country heterogeneity:** Relationships differ across structural contexts
+![Feature importance (validation, CI-significant only)](../figures/feature_importance.png)
 
-The model captures *predictive associations* useful for screening, not *causal effects* for policy design.
+### Direction: Ridge standardized coefficients (training fit; CV-best α=3000)
+
+(table from `reports/generated/table_ridge_coefficients.md`, top rows)
+
+| feature | name | coefficient |
+|---|---|---|
+| BX.KLT.DINV.WD.GD.ZS | Foreign direct investment, net inflows (% of GDP) | 0.135 |
+| SP.URB.TOTL.IN.ZS | Urban population (% of total population) | -0.068 |
+| NY.GDP.PCAP.CD_log1p | GDP per capita (current US$) (log1p) | -0.068 |
+| SP.POP.GROW | Population growth (annual %) | -0.050 |
+| NE.GDI.TOTL.ZS | Gross capital formation (% of GDP) | 0.041 |
+| EG.ELC.ACCS.ZS | Access to electricity (% of population) | 0.039 |
+
+All |coefficients| are ≤0.14 standardized units on a target with ~3.9pp validation MAE: even the *linear* association structure is faint, and heavy shrinkage (α=3000, the grid's largest value) is what fits best. Direction is reported **as association only**: negative GDPpc coefficient reflects conditional (partial) relationships within this small, collinear feature set — not "richer countries grow slower" as a causal claim.
+
+### Why this is a finding, not a shrug
+1. **It is robust.** The null appears on the *validation* split (gating margin 3.75% at n=150, within noise), on *test* (paired CI spans zero), under *both* model families, and across all three test target years.
+2. **It is mechanistically intelligible.** WDI growth-year aggregates change slowly (levels, not flows); next-year growth is dominated by events (conflict, commodity, policy shocks) with no representation in the feature space (§7 worst-errors).
+3. **It matches the macro-forecasting literature's priors** at annual frequency for a pooled cross-country panel of this size.
+4. **The alternative outcome is what a leaky protocol produces:** the previous cycle "found" 52.7% directional accuracy, a "dominant electricity predictor" and a shipped model worse than a constant. Removing the leaks removed the mirage.
+
+### Why feature importance ≠ causality (unchanged from prior drafts; still true)
+1. **Confounding:** electricity access correlates with institutions, geography, and oil rents.
+2. **Reverse causality:** growth funds infrastructure at least as much as infrastructure drives growth.
+3. **Omitted variables:** commodity prices, political stability, partners' growth, climate.
+4. **Measurement error:** WDI series are modeled estimates in low-capacity statistical systems; errors-in-variables attenuates associations.
+5. **Pooling:** one model across all countries imposes homogeneous slopes the data does not support.
+
+The model is a *conditional predictor*. Scenario-slider movements in the app are conditional prediction deltas — never counterfactual policy effects.
 
 ---
 
 ## 9. Decision-Support Application
 
-### Streamlit Architecture
-```
-User Browser → Streamlit Cloud → app.py
-    → Load serialized pipeline (joblib)
-    → Load processed data, predictions, importance (parquet)
-    → Create input dataframe from user selections
-    → Run pipeline.predict()
-    → Render charts, tables, warnings
-```
+### Streamlit architecture (4 pages)
+1. **Project Overview** — problem, data, model, honest headline metrics, causal disclaimer
+2. **Explore Africa** — country trends, indicator charts, regional comparison
+3. **Model Performance** — baseline comparison (test + validation), significance banner, actual-vs-predicted, residuals, CI-gated feature importance with noise table, Ridge direction panel, by-year metrics
+4. **Scenario Explorer** — what-if analysis with **training-window** guardrails and one-at-a-time model deltas
 
-### Pages
-1. **Project Overview:** Purpose, data, model, metrics, causal disclaimer
-2. **Explore Africa:** Country selector, growth trends, indicator charts, regional comparison
-3. **Model Performance:** Baselines, actual vs predicted, residuals, feature importance, yearly metrics
-4. **Scenario Explorer:** Country + year selector, baseline values, 5 adjustable sliders, baseline vs scenario prediction, extrapolation warnings, causal disclaimer
+### Guardrail design (H3)
+Slider ranges and P1–P99 warning bands are computed on the **training window only** (spec §14): e.g. inflation's warning band is the training P1–P99 (upper ≈ 49.5), not the full-panel 92.1, so a user setting 80% inflation is now warned. Out-of-band defaults are clamped into range and the clamp is disclosed to the user.
 
-### Scenario Explorer Design
-- **Adjustable indicators (5):** Electricity Access, Internet Usage, Capital Formation, Trade Openness, Inflation, Life Expectancy, GDP per Capita
-- **Slider ranges:** Full observed data min/max (B4 fix)
-- **Extrapolation warnings:** Fire when value outside P1-P99 range
-- **Causal disclaimer:** Prominent on Scenario page
+### Contribution display (H1)
+The former "Approx. Contribution = importance × change" table was dimensionally meaningless and is removed. Each row now re-runs the deployed pipeline changing only that indicator ("Individual effect (pp)"), with a caption that effects need not sum because the model is nonlinear.
 
-### Intended Use
-- Screen countries for deeper analysis
-- Explore "what-if" scenarios for priority indicators
-- Compare baseline vs. scenario predictions
-- Understand model limitations before drawing conclusions
+### Performance display (H4, significance)
+Every directional figure is shown with the majority-class rate and skill alongside it; the page opens with the paired-CI verdict.
 
 ---
 
 ## 10. Causal Limitations
 
-### Confounding
-Development indicators are endogenous. Electricity access correlates with governance quality, institutional capacity, geographic advantages. The model cannot disentangle these.
+Development indicators are endogenous; electricity access, internet penetration, and credit depth correlate with governance quality and structural features the model cannot observe. Growth funds infrastructure at least as plausibly as infrastructure causes growth. Critical determinants — commodity prices, terms of trade, political stability, education quality, climate shocks, global financial conditions — are absent. WDI figures are modeled estimates with non-trivial error in low-capacity statistical systems. One pooled model imposes homogeneous relationships across 52 very different economies.
 
-### Reverse Causality
-Growth → Infrastructure investment is at least as plausible as Infrastructure → Growth. The model uses *t* features to predict *t+1* growth, but *t* features may reflect growth expectations already.
-
-### Omitted Variables
-Critical growth determinants absent: commodity prices, terms of trade, political stability, institutional quality, education quality, health system capacity, climate shocks, global financial conditions.
-
-### Measurement Error
-WDI indicators are modeled estimates (especially for low-capacity statistical systems). Error-in-variables biases coefficients toward zero.
-
-### Country Heterogeneity
-One model for 54 countries assumes homogeneous relationships. In reality, electricity-growth elasticity differs between resource-rich and resource-poor, coastal and landlocked, stable and fragile states.
-
-### Why Predictive Scenarios Are Not Causal Interventions
-Changing a slider from 70% to 80% electricity access simulates: "What would the model predict for a country-year with 80% electricity access, holding other features constant?" This is a *conditional prediction*, not a *counterfactual*. The real world does not hold other factors constant when electricity access changes.
-
-### Methods Needed for Causal Claims
-- Natural experiments / instrumental variables
-- Difference-in-differences with policy rollouts
-- Structural causal models with explicit DAGs
-- Randomized controlled trials (where feasible)
-- Synthetic control methods
+Changing a slider from 70% to 80% electricity access asks the model: *what does it predict for a country-year profiled at 80%?* The real world does not hold other factors constant; this is a conditional prediction, not a counterfactual. Establishing policy effects requires natural experiments / instrumental variables, difference-in-differences on policy rollouts, structural causal models with explicit DAGs, RCTs where feasible, or synthetic-control methods.
 
 ---
 
 ## 11. Recommendations
 
-1. **Use the dashboard for initial country screening** – identify countries where development profiles suggest above/below average near-term growth potential.
-
-2. **Investigate consistently important indicators through domain research** – electricity access, macroeconomic stability, human capital. Consult sector-specific literature.
-
-3. **Combine model output with expert knowledge and country-specific evidence** – no model replaces contextual understanding.
-
-4. **Do not allocate funding solely from model predictions** – predictions are statistical associations, not causal guarantees.
-
-5. **Use causal research before treating any indicator as a policy lever** – e.g., before investing in electricity access to boost growth, study the causal evidence for *your* context.
-
-6. **Re-train periodically as WDI data and economic conditions change** – annual retraining recommended; model performance degrades during structural breaks.
-
-7. **Monitor performance during structural shocks** – COVID-19, commodity crashes, political transitions. The model has no shock-awareness mechanism.
-
-8. **Extend to country-specific models where data permits** – for large economies (Nigeria, South Africa, Egypt), country-specific models may outperform pooled model.
-
-9. **Add confidence intervals to predictions** – bootstrap prediction intervals would quantify uncertainty for decision makers.
-
-10. **Incorporate high-frequency indicators** – satellite nightlights, mobile money, trade flows for more timely predictions.
+1. **Do not allocate funding on the basis of this model's point predictions** — the honest headline (§7) says they are statistically indistinguishable from a constant.
+2. Use the dashboard for **descriptive comparison** of development profiles (its Explore page) — that is what the data supports.
+3. Treat every "scenario delta" as a *model-response* statistic, never an intervention effect.
+4. For actual growth forecasting at annual frequency, prioritize **higher-frequency signal** (nightlights, port/air-traffic data, mobile-money flows, survey expectations) over additional annual WDI indicators.
+5. Keep the **baseline gate + pre-registered protocol** from this cycle for any future model iteration; it is the reusable asset.
+6. Re-ingest WDI to restore MUS/SDN coverage before quoting country coverage in any external document.
+7. Monitor regime breaks (pandemic, commodity, conflict) — this null result is partly a statement about a 25-year window that includes three very different macro regimes.
 
 ---
 
 ## 12. Conclusion
 
-### What Was Built
-A complete ML decision-support system: data pipeline (WDI → country-year panel), two models (Ridge, HGB), temporal validation, serialized artifacts, and a deployed Streamlit application with 4 interactive pages.
+**What was built:** an end-to-end, leakage-controlled ML decision-support system — WDI ingestion with duplicate policy, coverage-gated feature engineering, temporal splits with explicit feature/target-year accounting, expanding-window hyperparameter tuning, a validation baseline gate, a frozen single-test-observation protocol, provenance-stamped artifacts, an artifact-driven Streamlit app with training-window guardrails, executed notebooks, and a test suite (≥60 tests) that regression-guards the selection protocol itself.
 
-### What the Model Achieved
-- Learned predictive associations between 14 development indicators and next-year GDP growth
-- Electricity access emerges as dominant predictor (permutation importance 0.60)
-- Provides directional accuracy ~53% on held-out test years (2021-2023)
-- Enables interactive scenario exploration with extrapolation guardrails
+**What the model achieved:** the strongest configuration within a pre-registered, honest search reaches test MAE **1.82** against **1.90** for the global-mean baseline, with a paired 95% CI of **[−0.04, +0.19]** on the improvement. Because that interval includes zero, we conclude the 14 WDI indicators evaluated here carry **no statistically significant information** about next-year GDP per capita growth beyond the unconditional mean.
 
-### Which Model Performed Best
-**HistGradientBoostingRegressor** selected over Ridge based on validation MAE (3.91 vs 3.98) and ability to capture non-linearities. However, neither model beats the global mean baseline on test MAE (3.54 vs 1.90).
+**Why that is a result:** a defensible null, produced by a protocol that *could have* found an effect (and previously was fooled into claiming one), is a genuine scientific contribution: it tells the reader that annual-frequency, country-level WDI aggregates are too coarse and slow-moving for short-run growth forecasting, and it identifies exactly what a serious next attempt would need (higher-frequency data, event-aware features, per-country structure).
 
-### How the Dashboard Supports Decisions
-- Country profiles with historical trends
-- Baseline vs. scenario predictions for 5 key indicators
-- Extrapolation warnings for unsupported scenarios
-- Explicit causal disclaimers throughout
+**How the dashboard supports decisions:** by making the model's limits the front page — significance verdict, majority-rate-aware directional metrics, CI-gated importance, training-window extrapolation warnings, and one-at-a-time model-delta scenarios.
 
-### Main Limitations
-- Negative R² on test set (no variance explained beyond mean)
-- Association ≠ causation
-- Temporal generalization only (seen countries, future years)
-- Limited feature set (14 WDI indicators)
-- Median imputation ignores country-specific patterns
-- No uncertainty quantification in deployed predictions
+**Main limitations:** temporal generalization only; n=150 test observations; COVID regime break adjacent to the test window; 52-of-54 country coverage in the committed panel; median imputation; grid multiple-comparison exposure (§13).
 
-### Future Improvements
-1. Add bootstrap prediction intervals
-2. Test country-specific models for large economies
-3. Incorporate high-frequency/non-traditional data (nightlights, mobility)
-4. Develop causal inference module for priority indicators
-5. Build automated retraining pipeline with drift detection
-6. Add subnational analysis where data permits
-7. Include climate vulnerability indicators
+**Future work:** re-ingest WDI at the full 54-country list; add higher-frequency indicators; event/antecedent features (commodity prices, political-instability indices); prediction intervals; a hierarchical or panel-Econometrics benchmark (AR panel with country fixed effects and shrinking memory toward the mean is the obvious next competitor — our tuned HGB essentially *discovers* that solution and lands on it); per-subregion models.
 
 ---
 
-## Appendix: Key Metrics from model_metadata.json
+## 13. Threats to Validity
+
+1. **Temporal generalization only.** Countries are shared across splits; we estimate "next years for known countries", not "unseen countries".
+2. **Small test set.** n=150 country-years → CIs on the headline comparison are wide; a true 0.07pp advantage cannot be resolved at this n, and neither can it be ruled out beyond the stated interval.
+3. **Regime break.** The val/test target regimes differ (COVID crash vs post-pandemic); our pre-registered refit policy addresses this but a longer post-COVID test window would be cleaner.
+4. **Multiple comparisons.** 12 CV configs + 2 families were compared on validation; selection noise inflates validation margins slightly. The paired bootstrap CI on the *test* metric is the number we lean on, and it spans zero.
+5. **Median imputation** erases country-level missingness structure (missing-ness can itself be informative — e.g. conflict states report less).
+6. **Coverage gap.** The committed panel lacks MUS/SDN; conclusions are unchanged by construction (they are null), but the next re-ingestion should re-verify.
+7. **Survivorship in WDI.** Indicator definitions and historical revisions change; the panel is pinned by SHA-256 provenance, not by a guarantee of vintage stability.
+
+---
+
+## Appendix: Key metrics (regenerated from `models/model_metadata.json`)
 
 ```json
 {
   "model_type": "HistGradientBoostingRegressor",
   "n_features": 14,
-  "train_end": 2017,
-  "val_end": 2020,
+  "refit_strategy": "train_only",
+  "gate": {"metric": "mae", "passed": true},
   "metrics": {
-    "global_mean_baseline": {"mae": 1.896, "rmse": 2.838, "r2": -0.001, "directional_accuracy": 0.807},
-    "persistence_baseline": {"mae": 2.229, "rmse": 4.521, "r2": -1.539, "directional_accuracy": 0.773},
-    "winner_test": {"mae": 3.540, "rmse": 4.998, "r2": -2.104, "directional_accuracy": 0.527}
+    "global_mean_baseline": {"mae": 1.8958, "rmse": 2.8379, "r2": -0.0005},
+    "persistence_baseline": {"mae": 2.2287, "rmse": 4.5209, "r2": -1.5392},
+    "country_historical_mean_baseline": {"mae": 1.9424, "rmse": 2.8816, "r2": -0.0316},
+    "winner_test": {"mae": 1.8217, "rmse": 2.7942, "r2": 0.0300}
+  },
+  "significance": {
+    "paired_mae_improvement_vs_global_mean": 0.074,
+    "ci_lower": -0.0422,
+    "ci_upper": 0.1868,
+    "significant_at_95": false,
+    "n_bootstrap": 5000
   }
 }
 ```
+
+*Values in this appendix are a copy of generated `reports/generated/metrics.json`
+fields; regenerate with `python scripts/build_report_assets.py`.*

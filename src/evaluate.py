@@ -92,7 +92,7 @@ def compute_bootstrap_ci(
     lower = np.percentile(boot_scores, alpha * 100)
     upper = np.percentile(boot_scores, (1 - alpha) * 100)
     logger.info(
-        "Bootstrap CI (%%.0f%%): [%.4f, %.4f] (n=%d)",
+        "Bootstrap CI (%.0f%%): [%.4f, %.4f] (n=%d)",
         confidence * 100, lower, upper, n_bootstrap
     )
     return lower, upper
@@ -129,6 +129,49 @@ def compute_permutation_importance(
     ).sort_values(ascending=False)
     logger.info("Permutation importance computed for %d features", len(importance))
     return importance
+
+
+def compute_permutation_importance_with_ci(
+    pipeline: Pipeline,
+    X: pd.DataFrame,
+    y: pd.Series,
+    feature_names: List[str],
+    n_repeats: int = 30,
+    random_state: int = 42,
+) -> pd.DataFrame:
+    """Permutation importance with dispersion and a significance flag.
+
+    H1: importance magnitude carries no directional meaning, and values whose
+    spread straddles zero are indistinguishable from noise. Callers must not
+    render these as 'positive'/'negative' effects.
+
+    Args:
+        pipeline: Fitted sklearn Pipeline.
+        X: Feature matrix to permute (use a *non-test* split for interpretation).
+        y: Target aligned with X.
+        feature_names: Ordered input feature names.
+        n_repeats: Permutations per feature; drives CI width.
+        random_state: Random seed for reproducibility.
+
+    Returns:
+        Columns: feature, importance_mean, importance_std, ci_lower, ci_upper,
+        is_significant (ci_lower > 0), sorted by importance_mean descending.
+    """
+    res = sk_permutation_importance(
+        pipeline, X, y, n_repeats=n_repeats, random_state=random_state)
+    lo = np.percentile(res.importances, 2.5, axis=1)
+    hi = np.percentile(res.importances, 97.5, axis=1)
+    out = pd.DataFrame({
+        "feature": feature_names,
+        "importance_mean": res.importances_mean,
+        "importance_std": res.importances_std,
+        "ci_lower": lo,
+        "ci_upper": hi,
+        "is_significant": lo > 0,
+    }).sort_values("importance_mean", ascending=False).reset_index(drop=True)
+    logger.info("Permutation importance: %d/%d features significant at 95%%",
+                int(out["is_significant"].sum()), len(out))
+    return out
 
 
 def compute_worst_errors(

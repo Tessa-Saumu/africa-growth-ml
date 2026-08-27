@@ -32,13 +32,24 @@ To execute notebooks with `jupyter nbconvert --execute`, the kernel must find th
 
 **Working approach:**
 ```bash
-pip install -e .                    # Install package in editable mode (creates .pth in site-packages)
-python -m ipykernel install --user --name=africa-growth-ml  # Register kernel
-# In notebook, use absolute path for imports:
+pip install -e ".[dev]"             # editable install exposes src.* (packages=["src"])
+python -m ipykernel install --user --name=africa-growth-ml   # register the venv kernel
+```
+
+In notebooks, resolve the project root portably — never hardcode an absolute
+path (that bug made both notebooks unrunnable off the author's machine):
+
+```python
+import os, sys
 from pathlib import Path
-PROJECT_ROOT = Path(r'C:\dev\africa-growth-ml')
-import sys
+PROJECT_ROOT = Path(os.environ.get("PROJECT_ROOT", "")) if os.environ.get("PROJECT_ROOT") else None
+if PROJECT_ROOT is None:
+    here = Path.cwd()
+    PROJECT_ROOT = next((p for p in [here, *here.parents] if (p / "pyproject.toml").exists()), here.parent)
 sys.path.insert(0, str(PROJECT_ROOT))
 ```
 
-**What fails:** Relative imports (`sys.path.insert(0, '../src')`) don't work because nbconvert runs from a temp dir. The kernel needs the project root in sys.path AND the package installed so `src.config` resolves.
+Then execute with:
+`jupyter nbconvert --to notebook --execute --inplace notebooks/<nb>.ipynb`
+
+**What fails:** Relative paths (`sys.path.insert(0, '../src')`) because nbconvert runs from a temp dir. The kernel needs the project root in sys.path AND the package installed so `src.config` resolves.
