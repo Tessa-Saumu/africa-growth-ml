@@ -123,3 +123,34 @@ def test_compute_metrics():
     metrics = compute_metrics(actual, predicted)
     assert metrics["mae"] == pytest.approx(0.15, abs=0.01)
     assert 0 <= metrics["directional_accuracy"] <= 1
+
+def test_get_transformed_feature_names_reflects_column_permutation():
+    """ColumnTransformer moves the log column to position 0; names must follow."""
+    from src.train import get_transformed_feature_names
+    feats = ["A", "B", "C", "D"]
+    pipe = build_ridge_pipeline(alpha=1.0, log_transform_features=["C"],
+                                all_feature_names=feats)
+    X = pd.DataFrame(np.random.rand(20, 4), columns=feats)
+    pipe.fit(X, pd.Series(np.random.rand(20)))
+    names = get_transformed_feature_names(pipe, feats)
+    assert names == ["C_log1p", "A", "B", "D"], names
+    assert len(names) == len(pipe.named_steps["model"].coef_)
+
+
+def test_get_transformed_feature_names_identity_without_log_step():
+    """Without the log_transform step the order is unchanged."""
+    from src.train import get_transformed_feature_names
+    feats = ["A", "B"]
+    pipe = build_ridge_pipeline(alpha=1.0)
+    assert get_transformed_feature_names(pipe, feats) == feats
+
+
+def test_directional_metrics_expose_majority_class_degeneracy():
+    """A constant positive predictor must score 0 skill, not high accuracy."""
+    y_true = np.array([1.0, 2.0, 3.0, 4.0, -1.0])   # 80% positive
+    y_pred = np.full(5, 2.0)                         # always positive
+    m = compute_metrics(y_true, y_pred)
+    assert m["directional_accuracy"] == pytest.approx(0.8)
+    assert m["directional_majority_rate"] == pytest.approx(0.8)
+    assert m["directional_skill"] == pytest.approx(0.0)
+    assert m["balanced_directional_accuracy"] == pytest.approx(0.5)

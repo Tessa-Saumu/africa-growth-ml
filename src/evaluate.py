@@ -92,7 +92,7 @@ def compute_bootstrap_ci(
     lower = np.percentile(boot_scores, alpha * 100)
     upper = np.percentile(boot_scores, (1 - alpha) * 100)
     logger.info(
-        "Bootstrap CI (%%.0f%%): [%.4f, %.4f] (n=%d)",
+        "Bootstrap CI (%.0f%%): [%.4f, %.4f] (n=%d)",
         confidence * 100, lower, upper, n_bootstrap
     )
     return lower, upper

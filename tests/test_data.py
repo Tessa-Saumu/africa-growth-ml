@@ -5,6 +5,7 @@ import pytest
 from pathlib import Path
 from src.data import (
     load_wdi_csv,
+    check_duplicates,
     filter_african_countries,
     filter_indicators,
     reshape_wide_to_long,
@@ -95,3 +96,38 @@ def test_log_dataset_info_logs(caplog):
     with caplog.at_level(logging.INFO):
         log_dataset_info(df, "Test")
     assert "Shape" in caplog.text
+
+def test_check_duplicates_flags_conflicting_values(caplog):
+    """M6: conflicting duplicate keys must be surfaced at WARNING level."""
+    import logging
+    df = pd.DataFrame({
+        "iso3": ["GHA", "GHA", "KEN"],
+        "year": [2018, 2018, 2018],
+        "indicator_code": ["X", "X", "X"],
+        "value": [1.0, 2.0, 3.0],          # conflicting
+    })
+    with caplog.at_level(logging.WARNING):
+        dups = check_duplicates(df, ["iso3", "year", "indicator_code"])
+    assert len(dups) == 2
+    assert "conflicting" in caplog.text.lower()
+
+
+def test_check_duplicates_clean_panel_returns_empty():
+    """No duplicate keys -> empty result, no warning."""
+    df = pd.DataFrame({
+        "iso3": ["GHA", "KEN"], "year": [2018, 2018],
+        "indicator_code": ["X", "X"], "value": [1.0, 2.0],
+    })
+    assert check_duplicates(df, ["iso3", "year", "indicator_code"]).empty
+
+
+def test_filter_african_countries_ignores_aggregates_without_explicit_blocklist():
+    """M12: aggregates cannot appear because the config list only holds
+    sovereign codes; filtering must not re-introduce them."""
+    df = pd.DataFrame({
+        "Country Name": ["Ghana", "Sub-Saharan Africa"],
+        "Country Code": ["GHA", "SSF"],
+        "Indicator Code": ["X", "X"],
+    })
+    result = filter_african_countries(df, african_codes=["GHA"])
+    assert result["Country Code"].tolist() == ["GHA"]

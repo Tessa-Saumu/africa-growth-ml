@@ -106,6 +106,36 @@ def build_ridge_pipeline(
     return pipeline
 
 
+def get_transformed_feature_names(pipeline: Pipeline, input_features: List[str]) -> List[str]:
+    """Return output feature names in the order the final estimator sees them.
+
+    A ColumnTransformer concatenates transformer outputs in declaration order,
+    so the log-transformed column is moved to position 0. Mapping coefficients
+    with zip(input_features, coef_) is therefore incorrect whenever a
+    'log_transform' step is present.
+
+    Args:
+        pipeline: Fitted or unfitted Pipeline, optionally containing a
+            'log_transform' ColumnTransformer step.
+        input_features: Feature names in the order passed to .fit().
+
+    Returns:
+        Output feature names aligned positionally with the final estimator's
+        coef_ / feature_importances_ array.
+    """
+    if "log_transform" not in pipeline.named_steps:
+        return list(input_features)
+    ct = pipeline.named_steps["log_transform"]
+    names: List[str] = []
+    for name, _transformer, cols in ct.transformers_:
+        if name == "remainder":
+            continue
+        for idx in cols:
+            base = input_features[idx]
+            names.append(f"{base}_log1p" if name == "log" else base)
+    return names
+
+
 def build_hgb_pipeline(
     max_iter: int = 1000,
     learning_rate: float = 0.05,
@@ -142,22 +172,44 @@ def build_hgb_pipeline(
 def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
     """Compute regression evaluation metrics.
 
+    Note: `directional_accuracy` is NOT a skill measure — for a target
+    distribution that is mostly one sign, any constant-sign predictor scores
+    the majority-class rate by construction. It must always be quoted next to
+    `directional_majority_rate`, or better, via `directional_skill` /
+    `balanced_directional_accuracy`.
+
     Args:
         y_true: Actual target values.
         y_pred: Predicted values.
 
     Returns:
-        Dictionary with mae, rmse, r2, and directional_accuracy.
+        Dictionary with mae, rmse, r2, directional_accuracy,
+        directional_majority_rate, directional_skill, and
+        balanced_directional_accuracy.
     """
     mae = mean_absolute_error(y_true, y_pred)
     rmse = np.sqrt(mean_squared_error(y_true, y_pred))
     r2 = r2_score(y_true, y_pred)
     direction_correct = ((y_true >= 0) == (y_pred >= 0)).mean()
+
+    # H4: raw directional accuracy equals the majority-class rate for any
+    # constant-sign predictor. Report skill-aware companions alongside it.
+    actual_pos = y_true >= 0
+    pred_pos = y_pred >= 0
+    majority_rate = max(actual_pos.mean(), 1.0 - actual_pos.mean())
+
+    tpr = (pred_pos[actual_pos]).mean() if actual_pos.any() else np.nan
+    tnr = (~pred_pos[~actual_pos]).mean() if (~actual_pos).any() else np.nan
+    balanced = np.nanmean([tpr, tnr])
+
     return {
         "mae": mae,
         "rmse": rmse,
         "r2": r2,
         "directional_accuracy": direction_correct,
+        "directional_majority_rate": float(majority_rate),
+        "directional_skill": float(direction_correct - majority_rate),
+        "balanced_directional_accuracy": float(balanced),
     }
 
 

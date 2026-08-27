@@ -61,7 +61,8 @@ geographic:
   # B7 FIX: Explicit ISO3 list prevents MENA substring trap.
   # "Middle East & North Africa" contains "Africa" - a region filter
   # matching that substring would silently include Saudi Arabia, Iran, etc.
-  # This list is the 54 UN-recognized African states.
+  # This list is the 54 UN-recognized African member states plus Western
+  # Sahara (ESH): 55 entries total.
   african_countries:
     - DZA
     - AGO
@@ -96,6 +97,7 @@ geographic:
     - MWI
     - MLI
     - MRT
+    - MUS
     - MAR
     - MOZ
     - NAM
@@ -109,12 +111,15 @@ geographic:
     - SOM
     - ZAF
     - SSD
+    - SDN
     - TZA
     - TGO
     - TUN
     - UGA
     - ZMB
     - ZWE
+    # ESH (Western Sahara): not a UN member state; retained for completeness.
+    # WDI publishes no rows for ESH, so src.data logs it as missing-from-data.
     - ESH
 
 temporal:

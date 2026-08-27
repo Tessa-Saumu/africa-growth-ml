@@ -81,3 +81,12 @@ def test_compute_worst_errors(sample_predictions):
     assert len(result) == 5
     assert "abs_error" in result.columns
     assert result["abs_error"].is_monotonic_decreasing
+
+def test_compute_bootstrap_ci_logs_without_formatting_error(caplog):
+    """M4: the CI log line must not raise a logging TypeError."""
+    import logging
+    a = np.random.RandomState(0).randn(30)
+    p = a + 0.1
+    with caplog.at_level(logging.INFO):
+        compute_bootstrap_ci(a, p, lambda x, y: np.mean(np.abs(x - y)), n_bootstrap=25)
+    assert any("Bootstrap CI" in r.getMessage() for r in caplog.records)

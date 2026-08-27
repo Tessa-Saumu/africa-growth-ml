@@ -42,3 +42,13 @@ jupyter notebook notebooks/01_data_profiling.ipynb
 - Processed outputs in `data/processed/` ARE committed (they are small)
 - Model artifacts in `models/` ARE committed (they are small)
 - The pipeline logs all dimensions and coverage statistics
+
+## Known Data Limitations
+
+- The committed `model_data.parquet` was generated before Mauritius (MUS) and
+  Sudan (SDN) were added to the country list in `config/indicators.yaml` and
+  therefore covers 52 countries. Re-running
+  `python -m src.data && python -m src.features` against a fresh
+  `WDI_CSV.zip` will produce the full 54-country panel.
+- ESH (Western Sahara) appears in the config for completeness, but WDI
+  publishes no rows for it; `src.data` logs it as missing-from-data.
