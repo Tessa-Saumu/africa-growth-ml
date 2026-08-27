@@ -4,9 +4,9 @@
 **Scripted runtime: 9 minutes 15 seconds**, leaving 45s of buffer inside the 10-minute ceiling.
 
 > Every number on slides 3, 5 and 6 is pasted from `reports/generated/`, which
-> `scripts/build_report_assets.py` builds from committed model artifacts.
+> `scripts/build_report_assets.py` builds from the saved model files.
 > Do not retype them by hand. `tests/test_report_assets.py` fails the build if
-> any document quotes a metric the artifacts do not support.
+> any document quotes a number the saved model does not support.
 
 ---
 
@@ -33,7 +33,7 @@ The brief names six items. Each maps to a numbered slide:
 
 **Question:** can recent development indicators predict near-term growth?
 
-**Answer:** no. The model does no better than guessing the historical average. The contribution is a pipeline rigorous enough to establish that rather than hide it.
+**Answer:** no. The model does no better than guessing the historical average. The contribution is a build process careful enough to establish that rather than hide it.
 
 **Presenter:** [Your Name] · **Date:** [Date] · **Program:** AnalystLab Data Science Internship Capstone
 
@@ -44,18 +44,18 @@ The brief names six items. Each maps to a numbered slide:
 ## Slide 2: Problem Statement (45 seconds)
 
 ### The task
-Predict GDP per capita growth for year *t+1* from development indicators observed at year *t*, across 54 African UN member states.
+Use this year's development indicators to predict next year's GDP per capita growth, across the 54 African UN member states.
 
 ### Why it's worth doing carefully
 Development analysts need screening tools. But a growth prediction is only useful if you can state how much better it is than "predict the average" — and that comparison is the step most portfolio projects skip.
 
 ### Framing
-- **Not:** a causal policy engine
-- **Is:** a statistical-association explorer plus a baseline-gated forecasting pipeline
+- **Not:** a tool that tells you what causes growth
+- **Is:** a tool that finds patterns, plus a build process that refuses to ship a model which fails to beat the obvious alternatives
 - **Users:** analysts, researchers, policy teams, NGOs
 
-### Success criterion, fixed before modelling
-Beat the global-mean, persistence, and country-historical-mean baselines **on validation**, with the margin tested for significance on a sealed test set. A model that cannot clear that bar does not ship.
+### The bar, set before any modelling
+Beat all three trivial rules — predict the average, predict this year's growth, predict each country's own average — on the tuning data. Then check on untouched data whether the winning margin is big enough to be real. A model that cannot clear that bar does not ship.
 
 ---
 
@@ -65,86 +65,90 @@ Beat the global-mean, persistence, and country-historical-mean baselines **on va
 World Bank **World Development Indicators** (WDI), 2000–2024. Public, no licence restriction, cited in `data/README.md`.
 
 ### Shape
-- 14 candidate indicators across 6 themes — 13 survive coverage filtering, plus the current-year growth column
-- **52 countries** in the committed panel; config lists all 54 UN member states plus ESH. Mauritius and Sudan are absent from this panel vintage and arrive on the next re-ingestion. Stated here rather than rounded to "54"
-- 1,300 country-year rows; 1,205 usable after target construction
+- 14 indicators across 6 themes — 13 report often enough to keep, plus the current-year growth column
+- **52 countries** in the data as committed; the configuration lists all 54. Mauritius and Sudan are missing from this vintage and arrive with the next refresh. Stated here rather than rounded up to "54"
+- 1,300 country-year rows; 1,205 usable once each row is paired with the following year's growth
 
-### Target construction
+### What the model predicts
 ```
-Features at year t  →  Target at year t+1
+Indicators at year t  →  Growth at year t+1
 Ghana 2019 indicators  →  Ghana 2020 GDP per capita growth
 ```
 
-### Temporal split — feature years, with target years made explicit
-| Split | Feature years | Target years | n |
+### How the years were divided — note the target years run one later
+| Portion | Input years | Growth years predicted | n |
 |---|---|---|---|
-| Train | 2000–2017 | 2001–2018 | 905 |
-| Validation | 2018–2020 | **2019–2021** (contains COVID) | 150 |
-| Test | 2021–2023 | **2022–2024** (sealed, read once) | 150 |
+| Training | 2000–2017 | 2001–2018 | 905 |
+| Tuning | 2018–2020 | **2019–2021** (includes the COVID crash) | 150 |
+| Testing | 2021–2023 | **2022–2024** (untouched, opened once) | 150 |
 
-> **Say:** "The target years matter more than the feature years. Validation contains the COVID crash; test is the recovery. That mismatch drives a design decision on the next slide."
+> **Say:** "The years being predicted matter more than the input years. Tuning covers the COVID crash; testing covers the recovery. That mismatch forces a design decision on the next slide."
 
 ---
 
 ## Slide 4: Analysis Process (70 seconds)
 
-### Pipeline — `scripts/finalize_model.py`, executed in this fixed order
+### The build — `scripts/finalize_model.py`, run in this fixed order
 ```
-Raw WDI CSV
-→ explicit ISO3 Africa filter (no MENA substring trap)
-→ country-year panel + duplicate policy
-→ next-year target via grouped shift
-→ coverage filter ≥60%, computed on TRAINING rows only
-→ expanding-window CV inside the train period:
-     HGB  depth {2,3} × lr {0.01,0.03,0.05} × iter {100,200}, early_stopping=True
-     Ridge α {1 … 3000}
-→ CV-best of each family scored on VALIDATION
-→ BASELINE GATE on validation — fail ⇒ no artifacts written, exit 2
-→ pre-registered refit: train-only
-→ TEST read exactly once: metrics + paired bootstrap significance
-→ provenance-stamped artifacts (SHA-256, git commit, library versions)
+Raw WDI download
+→ select African countries by explicit country code
+→ build the country-year table, resolve duplicates
+→ attach each row's following-year growth
+→ drop indicators reporting under 60% of the time,
+     measured on TRAINING rows only
+→ tune settings using training years only, by fitting on an early
+     stretch and checking the years just after, then widening:
+     trees  depth {2,3} × learning rate {0.01,0.03,0.05} × rounds {100,200}
+     Ridge  penalty strength {1 … 3000}
+→ score the best of each family on the TUNING data
+→ CHECK AGAINST THE TRIVIAL RULES — fail ⇒ nothing is saved, build exits
+→ retrain on training data only, as decided in advance
+→ OPEN THE TEST SET, exactly once: score, and test whether the margin is real
+→ stamp every saved file with a data fingerprint, git commit, library versions
 ```
 
-### EDA findings that shaped the model
-- Development levels — electricity, internet, urbanisation, life expectancy, GDP per capita — correlate at **0.45–0.71**. Five measurements of roughly one latent variable, not five signals
-- Current-year growth is uncorrelated with every level indicator (|r| ≤ 0.13)
-- Missingness is structural, clustering in specific country blocks, so the coverage filter runs on training rows only
+### What the data showed, and how it changed the model
+- Development levels — electricity, internet, urbanisation, life expectancy, GDP per capita — move together, correlating at **0.45–0.71**. They are five measurements of roughly the same underlying thing, not five independent signals
+- Current-year growth barely moves with any of them (correlations of 0.13 or less)
+- Missing data is not random — it clusters in particular countries, so the "does this indicator report often enough?" test runs on training rows only
 
 ### Models compared
-1. **Ridge** — linear benchmark, standardised coefficients carry direction
-2. **HistGradientBoosting** — deployed; won validation, cleared the gate
+1. **Ridge regression** — a straight-line model whose coefficients carry direction
+2. **Gradient-boosted trees** — deployed; won on tuning data and beat the trivial rules
 
-### Three baselines
-Global mean · persistence · country historical mean (expanding, no future data)
+### The three trivial rules
+Predict the average · predict this year's growth · predict each country's own past average (using only years already seen)
 
-> **Say:** "The refit policy was pre-registered. Validation spans COVID, test is the recovery — refitting across that regime break biases predictions downward. I fixed train-only before reading test, and I report the alternative as sensitivity."
+> **Say:** "I decided how to retrain before opening the test set. The tuning years contain the COVID crash and the test years are the recovery — train across that break and predictions come out systematically low. I locked in training-only beforehand, and I report the alternative so you can see the cost."
 
 ---
 
 ## Slide 5: Model Performance (85 seconds)
 
-### Test set — target years 2022–2024, n=150
+### Test set — growth years 2022–2024, n=150
 
-| Model | MAE | RMSE | R² | Dir. acc | Majority rate | Dir. skill |
+Lower MAE and RMSE are better; both are average error sizes in percentage points.
+
+| Model | MAE | RMSE | R² | Direction right | Always-"up" scores | Gain |
 |---|---:|---:|---:|---:|---:|---:|
-| Global mean baseline | 1.90 | 2.84 | −0.00 | 80.7% | 80.7% | 0.0 pp |
-| Persistence baseline | 2.23 | 4.52 | −1.54 | 77.3% | 80.7% | −3.3 pp |
-| Country historical mean | 1.94 | 2.88 | −0.03 | 78.0% | 80.7% | −2.7 pp |
-| **HGB (deployed)** | **1.82** | **2.79** | **0.03** | 80.7% | 80.7% | 0.0 pp |
+| Predict the average | 1.90 | 2.84 | −0.00 | 80.7% | 80.7% | 0.0 pts |
+| Predict this year's growth | 2.23 | 4.52 | −1.54 | 77.3% | 80.7% | −3.3 pts |
+| Predict country's own average | 1.94 | 2.88 | −0.03 | 78.0% | 80.7% | −2.7 pts |
+| **Gradient-boosted trees (deployed)** | **1.82** | **2.79** | **0.03** | 80.7% | 80.7% | 0.0 pts |
 
-*(Persistence scored on its fair-comparison subset — report §7.)*
+*(The "predict this year's growth" rule needs a previous year to exist, so it is scored only on rows where all models can compete — report §7.)*
 
 ### The number that decides the story
 > **The model beats the predict-the-average rule by 0.07 percentage points.**
-> **Resample the 150-row test set 5,000 times and that margin runs from 0.04 *worse* to 0.19 better.**
+> **Resample the 150-row test set 5,000 times and that margin runs from 0.04 worse to 0.19 better.**
 > **A range that includes losing means the lead is not real. The two perform the same. That is the finding.**
 
 > **Say:** "The model wins by seven hundredths of a point. But there are only 150 rows in the test set, so I resampled it five thousand times to see how stable that is. On a good number of those resamples the model actually loses. When your margin includes losing, you don't have a margin — you have noise."
 
-### Validation, where selection actually happened
-Ridge 4.00 · HGB **3.89** · global-mean baseline 4.04 — gate passed by 3.7%, which is inside noise at n=150. The null shows up here too.
+### The tuning data, where the model was actually chosen
+Ridge 4.00 · trees **3.89** · predict-the-average 4.04 — the trees cleared the bar by 3.7%, a margin well inside noise at 150 rows. The same non-result shows up here.
 
-### Reading directional accuracy honestly
+### Reading the direction figure honestly
 The model calls the direction of growth right 80.7% of the time. But growth was positive in 80.7% of test years — so always saying "up", using no data at all, scores exactly the same. The gap between the model and that trivial rule is **zero**. Scoring up-years and down-years separately and averaging gives **51.3%**, a coin flip.
 
 > **Say:** "If I put 80.7% on a slide with no context, it looks like the strongest number in the deck. It's the weakest. It's just how often growth happened to be positive."
@@ -155,42 +159,42 @@ The model calls the direction of growth right 80.7% of the time. But growth was 
 
 ## Slide 6: Key Insights (65 seconds)
 
-### 1. Only 2 of 14 features are distinguishable from noise
-Permutation importance on validation, with 95% CIs:
+### 1. Only 2 of 14 indicators made a reliable difference
+Shuffle one indicator's column at random, re-score, and see how much worse the model gets:
 - GDP per capita **0.046** [0.018, 0.085]
 - Population growth **0.017** [0.000, 0.037]
-- The other twelve — including electricity and inflation — have intervals crossing zero
+- For the other twelve — including electricity and inflation — the range of plausible values includes zero, meaning the model was not really using them
 
-Scale check: scrambling the strongest indicator worsens predictions by 0.046, against typical errors near 3.9 — about one percent. Real, but too small to act on.
+Scale check: scrambling the strongest indicator worsens predictions by 0.046, against typical errors near 3.9 — roughly one percent. Real enough to measure, far too small to act on.
 
-### 2. Importance is magnitude-only
-No positive/negative driver column. Permutation importance measures degradation from scrambling and carries no sign. An earlier draft had that column; it was a category error and was removed.
+### 2. This measures size, never direction
+There is no "positive driver / negative driver" column, because shuffling a column tells you how much the model leaned on an indicator, not which way it pushed. An earlier draft had that column; it was a category error and was removed.
 
-### 3. Even the linear structure is faint
-Ridge α settled at 3000 — the largest value in the grid. Maximum shrinkage toward the mean is the best a linear model can do here. All |coefficients| ≤ 0.14.
+### 3. Even the straight-line structure is faint
+Ridge settled on the strongest penalty in the grid — 3000, the largest value offered. Pulling predictions as hard as possible toward the average is the best a straight-line model can do here. Every coefficient is 0.14 or smaller.
 
-### 4. The errors are events, not model failure
-Every worst-error case is a shock year: Libya 2021 (13.15 pp), Cabo Verde 2021 (12.53 pp), Equatorial Guinea 2022 (11.01 pp). Conflict, tourism collapse, oil. No annual indicator panel anticipates these.
+### 4. The big misses are events, not model failure
+Every worst case is a shock year: Libya 2021 (13.15 pp off), Cabo Verde 2021 (12.53 pp), Equatorial Guinea 2022 (11.01 pp). Conflict, tourism collapse, oil. No set of annual indicators anticipates these.
 
-### 5. Why believe this null
-The same dataset previously produced a "working" model that was in fact worse than a constant — its test error was nearly double the global-mean baseline's — with the winner selected on the test set and fabricated statistics in the report. Fixing the protocol removed the mirage. The null is what the honest machinery reports.
+### 5. Why believe this result
+The same dataset previously produced a "working" model that was in fact worse than a constant — its test error was nearly double that of simply predicting the average — because the winner had been picked using the test set, and the report's statistics were invented. Fixing the process removed the mirage. This is what the honest machinery reports.
 
 ---
 
 ## Slide 7: Live Demo — Streamlit App (110 seconds)
 
-**Page 1 — Overview:** problem, data, model card, headline metrics with the significance caption, causal disclaimer.
+**Page 1 — Overview:** the problem, the data, the model, the headline result with its caveat stated up front, and the reminder that none of this shows cause and effect.
 
-**Page 2 — Explore Africa:** country selector, growth trend (observed vs next-year target), indicator trends, regional comparison.
+**Page 2 — Explore Africa:** country selector, growth over time (what happened vs what the model was asked to predict), indicator trends, regional comparison.
 
-**Page 3 — Model Performance:** significance banner; test and validation baseline tables with majority-rate columns; actual-vs-predicted; residuals; CI-gated importance with the noise table; Ridge direction panel; per-year metrics.
+**Page 3 — Model Performance:** the "this margin is not real" banner; how the model scores against the trivial rules on both test and tuning data, always showing what always-saying-"up" would score; where predictions land against reality; the errors; which indicators the model actually used, with the ones it ignored listed separately; the Ridge direction panel; results year by year.
 
 **Page 4 — Scenario Explorer** ← the decision-support feature
-1. Country + reference year → baseline feature values, with an imputation notice
-2. Sliders bounded by the **training window**; warning band is training P1–P99, so inflation warns above ~49.5 rather than 92
-3. Out-of-band defaults are clamped **and the clamp is disclosed**
-4. Delta table = one-at-a-time model re-runs, captioned as non-additive
-5. Causal disclaimer stays on screen
+1. Pick a country and year → its actual indicator values load, with a notice if any were filled in
+2. Sliders stay inside the range the model trained on, and warn past the edges — inflation warns above ~49.5 rather than 92
+3. If a country's real value sits outside that range, the slider is pulled to the edge **and says so**
+4. The change table re-runs the model once per indicator, and says plainly that the effects do not add up
+5. The cause-and-effect warning stays on screen
 
 *Narrate from live output only. No figures are scripted here — an earlier draft's illustrative numbers were removed.*
 
@@ -199,60 +203,60 @@ The same dataset previously produced a "working" model that was in fact worse th
 ## Slide 8: Recommendations (55 seconds)
 
 ### For anyone using this tool
-1. **Do not allocate funding from these point predictions.** They are statistically indistinguishable from a constant. This is the first recommendation because it is the one with consequences.
-2. **Use it for descriptive comparison** of development profiles — the Explore page. That is what the data supports.
-3. **Treat every scenario delta as a model response**, never an intervention effect.
+1. **Do not allocate funding based on these predictions.** They cannot be told apart from simply guessing the average. This is the first recommendation because it is the one with consequences.
+2. **Use it to compare and describe** development profiles — the Explore page. That is what the data supports.
+3. **Treat every scenario change as the model's response**, never as the effect of a policy.
 
-### For the next modelling cycle
-4. **Prioritise higher-frequency signal** — nightlights, port and air-traffic data, mobile-money flows, survey expectations — over more annual WDI indicators. Parity argues for better signal, not more models.
-5. **Keep the baseline gate and the pre-registered protocol.** That is the reusable asset from this project.
-6. **Re-ingest WDI** to restore Mauritius and Sudan before quoting country coverage externally.
-7. **Watch for regime breaks.** This null is partly a statement about a 25-year window containing three very different macro regimes.
+### For the next round of work
+4. **Find faster-moving data** — satellite nightlights, port and air-traffic volumes, mobile-money flows, survey expectations — rather than more annual indicators. Tying with the average argues for better signal, not more models.
+5. **Keep the automatic check against trivial rules, and keep deciding the rules before looking at the data.** That is the reusable asset from this project.
+6. **Re-download the WDI data** to restore Mauritius and Sudan before quoting country coverage externally.
+7. **Watch for periods that behave differently.** This result is partly a statement about a 25-year window containing three very different economic eras.
 
 ---
 
 ## Slide 9: Engineering & Rigor (40 seconds)
 
-- **Leakage control:** coverage filter on train rows; imputation and log transform inside the pipeline; target by grouped shift; test sealed until one scoring pass
-- **Baseline gate:** a worse-than-constant model cannot ship — enforced before artifacts are written, exits non-zero
-- **Real expanding-window CV** with committed result tables (`models/cv_results_*.csv`)
-- **Pre-registered refit** with train+val reported as sensitivity (MAE 2.03, bias −0.86 pp) — decided before test was read
-- **Significance testing** on the headline comparison, reported whatever it says
-- **Provenance:** panel SHA-256, git commit, library versions, split target-years; bit-deterministic re-run
-- **86 passing tests**, including adversarial guards: corrupt the test split and selection stays byte-identical; force a gate failure and no artifacts appear
-- **Executed notebooks**, no hardcoded paths, loading the deployed artifact rather than re-selecting
+- **Nothing from the future leaks backwards:** the coverage test runs on training rows only; filling gaps and rescaling happen inside the model, refitted per fold; each row's target comes from the following year within the same country; the test set stays closed until one final scoring pass
+- **A model worse than guessing cannot ship** — the check runs before anything is saved, and a failure exits with an error and writes nothing
+- **Settings genuinely tuned on training years only**, fitting on an early stretch and checking the years just after, with the fold-by-fold results committed (`models/cv_results_*.csv`)
+- **The retraining policy was fixed in advance**, and the alternative is reported as a cost: error 2.03, predictions 0.86 points low
+- **The headline comparison was tested for significance**, and reported whatever it said
+- **Every saved file records its origin:** data fingerprint, git commit, library versions, which years went where. Two runs produce identical numbers
+- **86 passing tests**, including deliberate sabotage: corrupt the test answers and model selection stays byte-for-byte identical; force the trivial-rule check to fail and confirm nothing gets saved
+- **Notebooks run start to finish**, with no hardcoded paths, loading the shipped model rather than picking a new one
 
 ---
 
 ## Slide 10: Close (15 seconds)
 
-1. **A defensible null beats an undefended win.** The protocol is the contribution.
-2. **Gate your models** — "does it beat the baseline it replaces?" belongs in the build, not the discussion section.
-3. **Generate every document number from artifacts** so the report cannot drift from the model.
+1. **A result you can defend beats a win you can't.** The process is the contribution.
+2. **Make your build check the obvious alternatives** — "does this beat what it replaces?" belongs in the code, not the discussion section.
+3. **Generate every number in every document from the saved model**, so the write-up cannot drift from what was actually built.
 
-- **GitHub:** this repository — code, artifacts, tests, executed notebooks, report + PDF
+- **GitHub:** this repository — code, saved model, tests, executed notebooks, full report
 - **App:** verified locally via `streamlit run app.py`; no public URL in this submission (README → Deployment)
-- **Report:** `reports/capstone_report.pdf`
+- **Report:** `reports/capstone_report.md`
 - **Contact:** [your email]
 
 ---
 
 ## Q&A talking points *(not counted in runtime)*
 
-- **Why HGB over Ridge?** CV-best HGB beat CV-best Ridge on validation MAE, 3.89 vs 4.00, and cleared the gate.
-- **Is tying with the baseline a failure?** No. It is a measured, tested statement about what this data can and cannot predict, produced by a process with no way to fake a result.
-- **Why did early stopping matter?** The previous cycle overfit because sklearn's `early_stopping="auto"` is inert below 10,000 samples and n=905. Explicit `True` bounds it — the deployed model runs 45 of 200 iterations.
-- **Why pre-register the refit?** Validation contains the COVID crash. Refitting across it biases test predictions: MAE 2.03 and −0.86 pp bias, versus 1.82 and +0.08 pp for train-only.
-- **Why not tune harder?** Test-set fishing is exactly how the previous cycle shipped a bad model. The grid is compact, pre-registered, and scored only inside training years.
-- **How often retrain?** Annually with WDI updates. Gate and significance must pass each time.
-- **Can this inform policy?** As screening context only. Causal claims need experimental or quasi-experimental designs.
-- **What would change your mind about the null?** Higher-frequency features, or a test set outside a pandemic-recovery window. Both are in Recommendations.
+- **Why trees over Ridge?** On the tuning data the best tree model missed by 3.89 points against Ridge's 4.00, and it beat the trivial rules.
+- **Is tying with the trivial rule a failure?** No. It is a measured, tested statement about what this data can and cannot predict, produced by a process with no way to fake a result.
+- **Why did early stopping matter?** The previous version overfit because scikit-learn's automatic setting switches itself off below 10,000 samples, and there are 905 training rows. Setting it explicitly bounds the model — it now stops at 45 rounds out of 200.
+- **Why fix the retraining policy in advance?** The tuning years contain the COVID crash. Training across it pushes predictions systematically low: error 2.03 and 0.86 points low, against 1.82 and 0.08 high for training-only.
+- **Why not tune harder?** Hunting for settings that score well on the test set is exactly how the previous version shipped a bad model. The grid is small, fixed in advance, and scored only within training years.
+- **How often retrain?** Annually, as WDI updates. The trivial-rule check and the significance test must pass each time.
+- **Can this inform policy?** As background screening only. Cause-and-effect claims need experiments or natural experiments.
+- **What would change your mind?** Faster-moving data, or a test window that isn't a pandemic recovery. Both are in Recommendations.
 
 ---
 
 ## Appendix *(only if asked)*
 
-- A1: Expanding-window CV tables (`models/cv_results_*.csv`)
-- A2: Bootstrap CIs and paired significance (report §7)
-- A3: Worst-error rows, all verified against `test_predictions.parquet` (report §7)
-- A4: Feature-selection audit — coverage filter, `SE.SEC.ENRR` dropped at 59.9%
+- A1: Fold-by-fold tuning results (`models/cv_results_*.csv`)
+- A2: How the ranges around each number were computed, and the head-to-head significance test (report §7)
+- A3: The largest misses, every row checked against the frozen predictions (report §7)
+- A4: Which indicators were kept and why — secondary school enrolment was dropped for reporting only 59.9% of the time
