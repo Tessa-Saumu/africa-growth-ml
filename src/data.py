@@ -76,13 +76,11 @@ def filter_african_countries(
     Returns:
         Filtered dataframe with African countries only.
     """
-    # Exclude known aggregates
-    aggregate_codes = {"SSF", "AFE", "AFW", "WLD", "INX", "SSA", "EAS", "ECS",
-                       "TEA", "TMN", "SAS", "ECS", "LCN", "EMU", "OED", "PSS",
-                       "PST", "UMC", "LIC", "MIC", "HPC", "FCS", "INX"}
-    valid_codes = [c for c in african_codes if c not in aggregate_codes]
+    # M12: no aggregate-code filtering needed here. Aggregates (SSF, AFE, AFW,
+    # WLD, income groups) cannot appear: the config list contains only
+    # sovereign ISO3 codes. See tests/test_data.py.
 
-    mask = df["Country Code"].isin(valid_codes)
+    mask = df["Country Code"].isin(african_codes)
     filtered = df[mask].copy()
     logger.info(
         "Filtered to %d rows (%d countries) from %d total rows using ISO3 list",
@@ -92,7 +90,7 @@ def filter_african_countries(
     )
     # Cross-check: log any ISO3 in data that's in our list but metadata might disagree
     data_codes = set(filtered["Country Code"].unique())
-    missing_from_data = set(valid_codes) - data_codes
+    missing_from_data = set(african_codes) - data_codes
     if missing_from_data:
         logger.warning("ISO3 codes in config but not in data: %s", missing_from_data)
     return filtered
@@ -146,6 +144,42 @@ def reshape_wide_to_long(
     long["year"] = pd.to_numeric(long["year"], errors="coerce")
     logger.info("Reshaped to long format: %d rows", len(long))
     return long
+
+
+def check_duplicates(df: pd.DataFrame, key_cols: List[str]) -> pd.DataFrame:
+    """Detect duplicate keys and surface conflicting values.
+
+    Spec section 7 requires that conflicting duplicates be investigated, not
+    silently collapsed. Exact duplicates are safe to drop; conflicting ones
+    indicate a source-data problem and are logged at WARNING.
+
+    Args:
+        df: Long-format frame prior to pivoting.
+        key_cols: Columns forming the uniqueness key,
+            e.g. ["iso3", "year", "indicator_code"].
+
+    Returns:
+        Rows belonging to duplicated keys, empty if none.
+    """
+    dup_mask = df.duplicated(subset=key_cols, keep=False)
+    dups = df[dup_mask]
+    if dups.empty:
+        logger.info("Duplicate check on %s: none found", key_cols)
+        return dups
+
+    exact = df.duplicated(keep=False) & dup_mask
+    n_exact = int(exact.sum())
+    conflicting = dups[~dups.index.isin(df[exact].index)]
+    logger.warning(
+        "Duplicate check on %s: %d duplicated rows (%d exact, %d conflicting)",
+        key_cols, len(dups), n_exact, len(conflicting),
+    )
+    if not conflicting.empty:
+        logger.warning(
+            "Conflicting duplicate keys require investigation:\n%s",
+            conflicting.head(20).to_string(),
+        )
+    return dups
 
 
 def pivot_to_country_year(df: pd.DataFrame) -> pd.DataFrame:
@@ -220,6 +254,9 @@ if __name__ == "__main__":
         filtered = filter_indicators(african_df, indicator_codes)
         year_cols = [str(y) for y in range(config.min_year, 2025)]
         long = reshape_wide_to_long(filtered, year_cols)
+        # M6: spec section 7 - investigate conflicting duplicates rather than
+        # silently dropping them.
+        check_duplicates(long, ["iso3", "year", "indicator_code"])
         panel = pivot_to_country_year(long)
         numeric_cols = [c for c in panel.columns if c not in ["iso3", "country_name", "year"]]
         panel = clean_numeric(panel, numeric_cols)

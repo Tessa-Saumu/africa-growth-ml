@@ -61,7 +61,8 @@ geographic:
   # B7 FIX: Explicit ISO3 list prevents MENA substring trap.
   # "Middle East & North Africa" contains "Africa" - a region filter
   # matching that substring would silently include Saudi Arabia, Iran, etc.
-  # This list is the 54 UN-recognized African states.
+  # This list is the 54 UN-recognized African member states plus Western
+  # Sahara (ESH): 55 entries total.
   african_countries:
     - DZA
     - AGO
@@ -96,6 +97,7 @@ geographic:
     - MWI
     - MLI
     - MRT
+    - MUS
     - MAR
     - MOZ
     - NAM
@@ -109,12 +111,15 @@ geographic:
     - SOM
     - ZAF
     - SSD
+    - SDN
     - TZA
     - TGO
     - TUN
     - UGA
     - ZMB
     - ZWE
+    # ESH (Western Sahara): not a UN member state; retained for completeness.
+    # WDI publishes no rows for ESH, so src.data logs it as missing-from-data.
     - ESH
 
 temporal:
@@ -127,6 +132,20 @@ temporal:
 model:
   random_state: 42
   ridge_alpha: 1.0
-  hgb_max_iter: 1000
+  # C5 FIX: early stopping must be explicit; "auto" is inert below 10k samples.
+  hgb_max_iter: 200
   hgb_learning_rate: 0.05
-  hgb_max_depth: 5
+  hgb_max_depth: 3
+  hgb_l2_regularization: 1.0
+  hgb_early_stopping: true
+  hgb_validation_fraction: 0.15
+  hgb_n_iter_no_change: 15
+
+  # Compact grid for expanding-window CV (spec section 9: no large search).
+  cv_initial_train_end: 2010
+  cv_val_window: 2
+  ridge_alpha_grid: [1.0, 10.0, 100.0, 300.0, 1000.0, 3000.0]
+  hgb_grid:
+    max_depth: [2, 3]
+    learning_rate: [0.01, 0.03, 0.05]
+    max_iter: [100, 200]

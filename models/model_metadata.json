@@ -32,47 +32,171 @@
       "mae": 1.8957656702015522,
       "rmse": 2.8378577452867932,
       "r2": -0.0005216261573597336,
-      "directional_accuracy": 0.8066666666666666
+      "directional_accuracy": 0.8066666666666666,
+      "directional_majority_rate": 0.8066666666666666,
+      "directional_skill": 0.0,
+      "balanced_directional_accuracy": 0.5
     },
     "persistence_baseline": {
       "mae": 2.2286543903574296,
       "rmse": 4.5209151510606445,
       "r2": -1.5392060818412903,
-      "directional_accuracy": 0.7733333333333333
+      "directional_accuracy": 0.7733333333333333,
+      "directional_majority_rate": 0.8066666666666666,
+      "directional_skill": -0.033333333333333326,
+      "balanced_directional_accuracy": 0.6628669136506127
+    },
+    "country_historical_mean_baseline": {
+      "mae": 1.9424014346459557,
+      "rmse": 2.881619408295848,
+      "r2": -0.03161697148328102,
+      "directional_accuracy": 0.78,
+      "directional_majority_rate": 0.8066666666666666,
+      "directional_skill": -0.026666666666666616,
+      "balanced_directional_accuracy": 0.5752351097178683
     },
     "ridge_val": {
-      "mae": 3.983305731821011,
-      "rmse": 5.9479377604083545,
-      "r2": -0.10448577879908316,
-      "directional_accuracy": 0.5666666666666667
+      "mae": 4.004344719523336,
+      "rmse": 6.083480416588929,
+      "r2": -0.15539777335382587,
+      "directional_accuracy": 0.5133333333333333,
+      "directional_majority_rate": 0.5133333333333333,
+      "directional_skill": 0.0,
+      "balanced_directional_accuracy": 0.5
     },
     "hgb_val": {
-      "mae": 3.9060632600885477,
-      "rmse": 5.941680643227411,
-      "r2": -0.10216320510886612,
-      "directional_accuracy": 0.58
+      "mae": 3.886913813392132,
+      "rmse": 5.968430000331614,
+      "r2": -0.11210938803232517,
+      "directional_accuracy": 0.5266666666666666,
+      "directional_majority_rate": 0.5133333333333333,
+      "directional_skill": 0.013333333333333308,
+      "balanced_directional_accuracy": 0.514054438711973
+    },
+    "val_baselines": {
+      "global_mean": {
+        "mae": 4.038251178578365,
+        "rmse": 6.1413501227898095,
+        "r2": -0.17748399482109423,
+        "directional_accuracy": 0.5133333333333333,
+        "directional_majority_rate": 0.5133333333333333,
+        "directional_skill": 0.0,
+        "balanced_directional_accuracy": 0.5
+      },
+      "persistence": {
+        "mae": 5.020742634761081,
+        "rmse": 8.269625697596554,
+        "r2": -1.1350055248161333,
+        "directional_accuracy": 0.5466666666666666,
+        "directional_majority_rate": 0.5133333333333333,
+        "directional_skill": 0.033333333333333326,
+        "balanced_directional_accuracy": 0.5459882583170255
+      }
+    },
+    "winner_val": {
+      "mae": 3.886913813392132,
+      "rmse": 5.968430000331614,
+      "r2": -0.11210938803232517,
+      "directional_accuracy": 0.5266666666666666,
+      "directional_majority_rate": 0.5133333333333333,
+      "directional_skill": 0.013333333333333308,
+      "balanced_directional_accuracy": 0.514054438711973
     },
     "winner_test": {
-      "mae": 3.539652137963711,
-      "rmse": 4.998371252952487,
-      "r2": -2.1038609524852316,
-      "directional_accuracy": 0.5266666666666666
-    },
-    "feature_importance": {
-      "EG.ELC.ACCS.ZS": 0.6036480252880414,
-      "NY.GDP.PCAP.CD": 0.2216328459394028,
-      "SL.UEM.TOTL.ZS": 0.17661229535289075,
-      "FS.AST.PRVT.GD.ZS": 0.056487578866243206,
-      "NE.CON.GOVT.ZS": -0.05556458120857508,
-      "BX.KLT.DINV.WD.GD.ZS": -0.0778024228933785,
-      "NE.TRD.GNFS.ZS": -0.07960469908386099,
-      "NY.GDP.PCAP.KD.ZG": -0.08846827465425769,
-      "SP.URB.TOTL.IN.ZS": -0.093498666945972,
-      "IT.NET.USER.ZS": -0.1409187826683401,
-      "SP.DYN.LE00.IN": -0.15048509083844736,
-      "SP.POP.GROW": -0.15379006337901568,
-      "FP.CPI.TOTL.ZG": -0.1955145514738005,
-      "NE.GDI.TOTL.ZS": -0.21150560529453685
+      "mae": 1.821732511688034,
+      "rmse": 2.7941842484578348,
+      "r2": 0.030036666631654052,
+      "directional_accuracy": 0.8066666666666666,
+      "directional_majority_rate": 0.8066666666666666,
+      "directional_skill": 0.0,
+      "balanced_directional_accuracy": 0.5131091479053862
     }
+  },
+  "created_utc": "2026-08-27T03:08:40+00:00",
+  "git_commit": "2920aa9839603008e66fb9efc19e7b1518daac6f",
+  "library_versions": {
+    "python": "3.11.2",
+    "scikit_learn": "1.9.0",
+    "pandas": "2.3.3",
+    "numpy": "1.26.4"
+  },
+  "data_provenance": {
+    "panel_path": "data/processed/model_data.parquet",
+    "panel_sha256": "ffcee5e217e83b325085ee23aef344d0628cf6719525217f99762fd783245a8b",
+    "panel_rows": 1300,
+    "n_countries": 52,
+    "year_min": 2000,
+    "year_max": 2024,
+    "wdi_vintage": "unrecorded (WDI bulk download predating commit)"
+  },
+  "split_sizes": {
+    "train": 905,
+    "val": 150,
+    "test": 150
+  },
+  "split_target_years": {
+    "train": [
+      2001,
+      2018
+    ],
+    "val": [
+      2019,
+      2021
+    ],
+    "test": [
+      2022,
+      2024
+    ]
+  },
+  "refit_strategy": "train_only",
+  "gate": {
+    "metric": "mae",
+    "passed": true,
+    "failures": [],
+    "per_baseline": {
+      "global_mean": {
+        "baseline_value": 4.038251178578365,
+        "candidate_value": 3.886913813392132,
+        "margin": 0.15133736518623309,
+        "relative_margin_pct": 3.7475966326470616,
+        "passed": true
+      },
+      "persistence": {
+        "baseline_value": 5.020742634761081,
+        "candidate_value": 3.886913813392132,
+        "margin": 1.1338288213689491,
+        "relative_margin_pct": 22.582890696664915,
+        "passed": true
+      }
+    }
+  },
+  "significance": {
+    "paired_mae_improvement_vs_global_mean": 0.07403315851351838,
+    "ci_lower": -0.04219949256654686,
+    "ci_upper": 0.18681847017980746,
+    "significant_at_95": false,
+    "n_bootstrap": 5000
+  },
+  "sensitivity": {
+    "refit_train_val": {
+      "test_metrics": {
+        "mae": 2.0341106514922807,
+        "rmse": 2.9854252361027824,
+        "r2": -0.10728046092865617,
+        "directional_accuracy": 0.76,
+        "directional_majority_rate": 0.8066666666666666,
+        "directional_skill": -0.046666666666666634,
+        "balanced_directional_accuracy": 0.6021658592191508
+      },
+      "mean_prediction": 1.0176960739021055,
+      "mean_actual": 1.873471622472515,
+      "bias_note": "train+val refit absorbs the 2020 COVID crash (validation target mean is far below test target mean), depressing central tendency on test - the C6 mechanism"
+    }
+  },
+  "feature_selection": {
+    "candidates": 14,
+    "kept": 14,
+    "dropped": {},
+    "min_coverage_pct": 60.0
   }
 }

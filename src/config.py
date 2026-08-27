@@ -5,7 +5,7 @@ boundaries from a YAML configuration file.
 """
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List
 import yaml
 import logging
 
@@ -34,9 +34,24 @@ class Config:
     log_transform_candidates: List[str]
     random_state: int = 42
     ridge_alpha: float = 1.0
-    hgb_max_iter: int = 1000
+    hgb_max_iter: int = 200
     hgb_learning_rate: float = 0.05
-    hgb_max_depth: int = 5
+    hgb_max_depth: int = 3
+    # C5 FIX: explicit early-stopping controls ("auto" is inert below 10k samples)
+    hgb_l2_regularization: float = 1.0
+    hgb_early_stopping: bool = True
+    hgb_validation_fraction: float = 0.15
+    hgb_n_iter_no_change: int = 15
+    # Task 2.1: compact expanding-window CV grid (spec section 9)
+    cv_initial_train_end: int = 2010
+    cv_val_window: int = 2
+    ridge_alpha_grid: List[float] = field(
+        default_factory=lambda: [1.0, 10.0, 100.0, 300.0, 1000.0, 3000.0])
+    hgb_grid: Dict[str, List[Any]] = field(default_factory=lambda: {
+        "max_depth": [2, 3],
+        "learning_rate": [0.01, 0.03, 0.05],
+        "max_iter": [100, 200],
+    })
 
 
 def load_config(path: Path = Path("config/indicators.yaml")) -> Config:
@@ -61,6 +76,7 @@ def load_config(path: Path = Path("config/indicators.yaml")) -> Config:
         for feat in raw["features"]
     ]
 
+    model_raw = raw["model"]
     config = Config(
         features=features,
         target_code=raw["target"]["code"],
@@ -71,11 +87,24 @@ def load_config(path: Path = Path("config/indicators.yaml")) -> Config:
         train_end=raw["temporal"]["train_end"],
         val_end=raw["temporal"]["val_end"],
         log_transform_candidates=raw.get("log_transform_candidates", []),
-        random_state=raw["model"]["random_state"],
-        ridge_alpha=raw["model"]["ridge_alpha"],
-        hgb_max_iter=raw["model"]["hgb_max_iter"],
-        hgb_learning_rate=raw["model"]["hgb_learning_rate"],
-        hgb_max_depth=raw["model"]["hgb_max_depth"],
+        random_state=model_raw["random_state"],
+        ridge_alpha=model_raw["ridge_alpha"],
+        hgb_max_iter=model_raw["hgb_max_iter"],
+        hgb_learning_rate=model_raw["hgb_learning_rate"],
+        hgb_max_depth=model_raw["hgb_max_depth"],
+        hgb_l2_regularization=model_raw.get("hgb_l2_regularization", 1.0),
+        hgb_early_stopping=model_raw.get("hgb_early_stopping", True),
+        hgb_validation_fraction=model_raw.get("hgb_validation_fraction", 0.15),
+        hgb_n_iter_no_change=model_raw.get("hgb_n_iter_no_change", 15),
+        cv_initial_train_end=model_raw.get("cv_initial_train_end", 2010),
+        cv_val_window=model_raw.get("cv_val_window", 2),
+        ridge_alpha_grid=model_raw.get(
+            "ridge_alpha_grid", [1.0, 10.0, 100.0, 300.0, 1000.0, 3000.0]),
+        hgb_grid=model_raw.get("hgb_grid", {
+            "max_depth": [2, 3],
+            "learning_rate": [0.01, 0.03, 0.05],
+            "max_iter": [100, 200],
+        }),
     )
     logger.info(
         "Loaded %d features, target=%s, %d African countries",

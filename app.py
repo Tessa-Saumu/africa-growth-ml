@@ -116,11 +116,16 @@ def load_test_predictions() -> pd.DataFrame:
 
 
 @st.cache_data
-def load_feature_importance() -> pd.Series:
-    """Load precomputed permutation feature importance.
+def load_feature_importance() -> pd.DataFrame:
+    """Load precomputed permutation importance (computed on VALIDATION with CIs).
+
+    H1 remediation: the parquet now carries dispersion and significance columns;
+    magnitudes carry no directional meaning and non-significant rows must be
+    presented as 'not distinguishable from noise', never as effects.
 
     Returns:
-        Series indexed by feature name with importance values.
+        DataFrame with columns feature, importance_mean, importance_std,
+        ci_lower, ci_upper, is_significant.
     """
     imp_path = Path("models/feature_importance.parquet")
     if not imp_path.exists():
@@ -128,9 +133,26 @@ def load_feature_importance() -> pd.Series:
         st.stop()
 
     df = pd.read_parquet(imp_path)
-    importance: pd.Series = df.set_index("feature")["importance"]  # type: ignore[assignment]
-    logger.info("Loaded feature importance for %d features", len(importance))
-    return importance
+    logger.info("Loaded feature importance for %d features (%d significant)",
+                len(df), int(df["is_significant"].sum()))
+    return df
+
+
+@st.cache_data
+def get_training_data(data: pd.DataFrame, train_end: int) -> pd.DataFrame:
+    """Training-period rows only, for guardrail calibration.
+
+    H3: spec section 14 requires observed TRAINING minimum/maximum. Using the
+    full panel silently widens the safe band (inflation P99 92.05 vs 49.51).
+
+    Args:
+        data: Full processed country-year panel.
+        train_end: Last training year from model metadata.
+
+    Returns:
+        Rows with year <= train_end.
+    """
+    return data[data["year"] <= train_end]
 
 
 @st.cache_data
@@ -151,19 +173,137 @@ def load_country_metadata() -> pd.DataFrame:
 # =============================================================================
 
 def get_feature_display_name(feature_code: str, config_features: List[Dict]) -> str:
-    """Map WDI feature code to human-readable name."""
+    """Map WDI feature code to human-readable name.
+
+    NY.GDP.PCAP.KD.ZG is carried as a predictor (this year's growth) but lives
+    under `target` in the config rather than `features`, so the lookup below
+    misses it and the raw code leaks into the UI. Named explicitly.
+    """
     for feat in config_features:
         if feat["code"] == feature_code:
             return feat["name"]
+    if feature_code == "NY.GDP.PCAP.KD.ZG":
+        return "GDP per capita growth, current year (annual %)"
     return feature_code
 
 
-def get_scenario_features(metadata: Dict, config_features: List[Dict]) -> List[str]:
+def get_model_responsive_features(pipeline: SklearnPipeline, feature_names: List[str]) -> List[str]:
+    """Feature codes the fitted model can actually respond to.
+
+    B12: the deployed HistGradientBoosting model splits on only 8 of its 14
+    inputs — the remaining 6 were never selected by any tree, so changing them
+    cannot move a prediction by even a floating-point ulp. Reading the split
+    features straight off the fitted predictors is exact: no threshold, no
+    proxy metric. Falls back to all features if the estimator does not expose
+    the private tree structure (e.g. a Ridge pipeline or a future sklearn).
+
+    Args:
+        pipeline: The fitted sklearn pipeline.
+        feature_names: Ordered feature codes matching the model's input columns.
+
+    Returns:
+        Feature codes used in at least one split, ordered by split count
+        (most-used first). All features if introspection is unavailable.
+    """
+    model = pipeline.steps[-1][1]
+    predictors = getattr(model, "_predictors", None)
+    if not predictors:
+        return list(feature_names)
+
+    split_counts: Dict[int, int] = {}
+    try:
+        for stage in predictors:
+            for predictor in stage:
+                for node in predictor.nodes:
+                    if not node["is_leaf"]:
+                        idx = int(node["feature_idx"])
+                        split_counts[idx] = split_counts.get(idx, 0) + 1
+    except (AttributeError, KeyError, IndexError, TypeError):
+        return list(feature_names)
+
+    if not split_counts:
+        return list(feature_names)
+
+    ordered = sorted(split_counts.items(), key=lambda kv: -kv[1])
+    return [feature_names[i] for i, _ in ordered if i < len(feature_names)]
+
+
+def probe_feature_responsiveness(
+    pipeline: SklearnPipeline,
+    baseline_row: pd.DataFrame,
+    train_data: pd.DataFrame,
+    feature_names: List[str],
+    n_probe: int = 9,
+) -> Dict[str, float]:
+    """How much each feature can move the prediction *for this exact row*.
+
+    Being split on somewhere in the forest is necessary but not sufficient: a
+    tree-ensemble prediction only responds to a feature if this row actually
+    reaches a node that splits on it. Ghana 2019, for example, is routed away
+    from every internet-usage split, so that slider is inert for Ghana even
+    though the model uses it elsewhere. The only exact test is to sweep the
+    value and watch the prediction, which is what this does — one batched
+    predict over all features and probe points.
+
+    Args:
+        pipeline: Fitted pipeline.
+        baseline_row: Single-row frame of the country-year's feature values.
+        train_data: Training-window rows, used for each feature's sweep range.
+        feature_names: Ordered model input columns.
+        n_probe: Probe points per feature across the training range.
+
+    Returns:
+        Feature code -> prediction spread (max - min) across its sweep.
+    """
+    probe_rows: List[pd.DataFrame] = []
+    owners: List[str] = []
+    for feat in feature_names:
+        if feat not in train_data.columns:
+            continue
+        vals = train_data[feat].dropna()
+        if len(vals) == 0:
+            continue
+        lo, hi = float(vals.min()), float(vals.max())
+        if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
+            continue
+        block = pd.concat([baseline_row] * n_probe, ignore_index=True)
+        block[feat] = np.linspace(lo, hi, n_probe)
+        probe_rows.append(block)
+        owners.extend([feat] * n_probe)
+
+    if not probe_rows:
+        return {}
+
+    probes = pd.concat(probe_rows, ignore_index=True).reindex(columns=feature_names)
+    preds = pipeline.predict(probes)
+    out: Dict[str, float] = {}
+    owner_arr = np.asarray(owners)
+    for feat in dict.fromkeys(owners):
+        block_preds = preds[owner_arr == feat]
+        out[feat] = float(block_preds.max() - block_preds.min())
+    return out
+
+
+def get_scenario_features(
+    metadata: Dict,
+    config_features: List[Dict],
+    pipeline: Optional[SklearnPipeline] = None,
+    responsiveness: Optional[Dict[str, float]] = None,
+    tolerance: float = 1e-9,
+) -> List[str]:
     """Select 3-5 features suitable for scenario exploration.
 
-    Chooses features with understandable units and adequate coverage.
+    B12 FIX: this used to return a hardcoded wish list of "policy-relevant"
+    indicators (electricity, internet, capital formation, trade, inflation).
+    The deployed model never splits on five of them, so every slider on the
+    page was inert — the prediction could not change no matter how far a user
+    dragged them. Selection is now driven by measured responsiveness for the
+    country-year on screen (see probe_feature_responsiveness), falling back to
+    the model's global split features, then to the raw feature list.
+    Interpretable indicators are still preferred; actually moving the
+    prediction is the hard constraint.
     """
-    # Priority features for scenario explorer (interpretable, policy-relevant)
+    # Interpretable, policy-legible indicators, in preference order.
     priority_codes = [
         "EG.ELC.ACCS.ZS",      # Electricity access (%)
         "IT.NET.USER.ZS",      # Internet usage (%)
@@ -172,12 +312,47 @@ def get_scenario_features(metadata: Dict, config_features: List[Dict]) -> List[s
         "FP.CPI.TOTL.ZG",      # Inflation (%)
         "SP.DYN.LE00.IN",      # Life expectancy (years)
         "NY.GDP.PCAP.CD",      # GDP per capita (current US$)
+        "SP.POP.GROW",         # Population growth (annual %)
+        "BX.KLT.DINV.WD.GD.ZS",  # FDI net inflows (% of GDP)
+        "SP.URB.TOTL.IN.ZS",   # Urban population (%)
+        "FS.AST.PRVT.GD.ZS",   # Domestic credit to private sector (% of GDP)
     ]
 
     available_features = set(metadata["feature_names"])
-    scenario_features = [f for f in priority_codes if f in available_features]
+    if responsiveness:
+        # Measured for this row: keep only features that actually move it,
+        # most responsive first.
+        responsive = [
+            f for f, spread in sorted(responsiveness.items(), key=lambda kv: -kv[1])
+            if spread > tolerance
+        ]
+    elif pipeline is not None:
+        responsive = get_model_responsive_features(pipeline, metadata["feature_names"])
+    else:
+        responsive = list(metadata["feature_names"])
+    responsive_set = set(responsive)
 
-    # Ensure we have at least 3, at most 5
+    # Interpretable AND responsive, in preference order.
+    scenario_features = [
+        f for f in priority_codes if f in available_features and f in responsive_set
+    ]
+
+    # Top up from the remaining responsive features (most-used first).
+    if len(scenario_features) < 5:
+        for f in responsive:
+            if f not in scenario_features:
+                scenario_features.append(f)
+            if len(scenario_features) >= 5:
+                break
+
+    # Last resort: if the model exposed no usable features at all, fall back to
+    # the raw feature list so the page still renders.
+    if len(scenario_features) < 3:
+        for f in metadata["feature_names"]:
+            if f not in scenario_features:
+                scenario_features.append(f)
+            if len(scenario_features) >= 3:
+                break
     return scenario_features[:5]
 
 
@@ -231,7 +406,14 @@ def check_extrapolation_warning(
     scenario_values: Dict[str, float],
     data: pd.DataFrame,
 ) -> List[str]:
-    """Check if any scenario values fall outside P1-P99 range.
+    """Check if any scenario values fall outside the TRAINING P1-P99 range.
+
+    H3: callers must pass the training-window rows (see get_training_data),
+    per spec section 14 — guardrails are calibrated on observed training data.
+
+    Args:
+        scenario_values: Feature code -> proposed value.
+        data: Training-period rows of the processed panel.
 
     Returns:
         List of warning messages.
@@ -242,8 +424,8 @@ def check_extrapolation_warning(
         if val < p1 or val > p99:
             display_name = get_feature_display_name(feat, load_config_features())
             warnings.append(
-                f"**Warning:** {display_name} = {val:.1f} is outside the "
-                f"historical range (P1-P99: {p1:.1f}–{p99:.1f}). "
+                f"**Warning:** {display_name} = {val:.1f} is outside the training "
+                f"range (P1-P99: {p1:.1f}–{p99:.1f}). "
                 f"The result may be unreliable due to extrapolation."
             )
     return warnings
@@ -346,8 +528,8 @@ def main():
     st.sidebar.caption(
         f"Model: {metadata['model_type']}  \n"
         f"Features: {metadata['n_features']}  \n"
-        f"Training: ≤{metadata['train_end']}  \n"
-        f"Test: >{metadata['val_end']}"
+        f"Train features ≤{metadata['train_end']} (targets ≤{metadata['train_end'] + 1})  \n"
+        f"Test features >{metadata['val_end']} (targets >{metadata['val_end'] + 1})"
     )
 
     # Route to page
@@ -360,7 +542,7 @@ def main():
     elif page == "🎯 Scenario Explorer":
         render_scenario_page(
             pipeline, processed_data, metadata, selected_iso3, selected_country_name,
-            config_features, feature_importance
+            config_features
         )
 
 
@@ -391,7 +573,7 @@ def render_overview_page(metadata: Dict, config_features: List[Dict]):
         st.markdown("""
         - **Target:** GDP per capita growth (annual %) in year *t+1*
         - **Features:** Development indicators observed in year *t*
-        - **Geography:** 52 African countries (UN-recognized states)
+        - **Geography:** African countries from an explicit ISO3 list (see README for coverage notes)
         - **Time Range:** 2000–2024 (training: 2000–2017, validation: 2018–2020, test: 2021+)
         - **Task:** Regression (predict next-year growth in percentage points)
         """)
@@ -416,10 +598,25 @@ def render_overview_page(metadata: Dict, config_features: List[Dict]):
         st.subheader("📈 Key Metrics (Test Set)")
         test_metrics = metadata["metrics"]["winner_test"]
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("MAE", f"{test_metrics['mae']:.2f} pp")
+        m1.metric("MAE", f"{test_metrics['mae']:.2f} pp",
+                  help=f"Global-mean baseline: {metadata['metrics']['global_mean_baseline']['mae']:.2f} pp")
         m2.metric("RMSE", f"{test_metrics['rmse']:.2f} pp")
         m3.metric("R²", f"{test_metrics['r2']:.3f}")
-        m4.metric("Directional Accuracy", f"{test_metrics['directional_accuracy']:.1%}")
+        m4.metric("Directional accuracy",
+                  f"{test_metrics['directional_accuracy']:.1%}",
+                  help=f"Majority-class rate is "
+                       f"{test_metrics['directional_majority_rate']:.1%}; skill = "
+                       f"{test_metrics['directional_skill']:+.1%} (H4: raw accuracy "
+                       f"is not skill)")
+        sig_ov = metadata.get("significance")
+        if sig_ov:
+            st.caption(
+                f"Paired improvement vs global mean: "
+                f"{sig_ov['paired_mae_improvement_vs_global_mean']:+.2f} pp, "
+                f"95% CI [{sig_ov['ci_lower']:+.2f}, {sig_ov['ci_upper']:+.2f}]"
+                + (" — significant." if sig_ov["significant_at_95"]
+                   else " — spans zero: parity with the mean baseline.")
+            )
 
     st.subheader("📋 Features Used by Model")
     feature_df = pd.DataFrame([
@@ -591,55 +788,93 @@ def render_explore_page(
 
 def render_performance_page(
     test_predictions: pd.DataFrame,
-    feature_importance: pd.Series,
+    feature_importance: pd.DataFrame,
     metadata: Dict,
     processed_data: pd.DataFrame,
 ):
-    """Render the Model Performance page."""
+    """Render the Model Performance page.
+
+    Args:
+        test_predictions: Deployed model's frozen test predictions.
+        feature_importance: Validation permutation importance with CIs.
+        metadata: model_metadata.json contents (single source of truth).
+        processed_data: Full processed panel (for by-context lookups).
+    """
     st.title("📊 Model Performance")
+
+    metrics = metadata["metrics"]
+
+    # ------------------------------------------------------------------
+    # Honest headline (Task 2.4/3.3): the significance verdict, not spin.
+    # ------------------------------------------------------------------
+    sig = metadata.get("significance")
+    winner_mae = metrics["winner_test"]["mae"]
+    gm_mae = metrics["global_mean_baseline"]["mae"]
+    if sig:
+        verdict = (
+            "statistically distinguishable from predicting the mean"
+            if sig["significant_at_95"] else
+            "**not** statistically distinguishable from predicting the mean"
+        )
+        st.info(
+            f"Test MAE {winner_mae:.2f} vs {gm_mae:.2f} for the global-mean baseline. "
+            f"Paired 95% CI on the improvement: "
+            f"[{sig['ci_lower']:+.2f}, {sig['ci_upper']:+.2f}] pp — this includes zero: "
+            f"the model is {verdict}. This parity result is the study's substantive "
+            f"finding; see the report for the pre-registered protocol behind it."
+        )
+
+    gate = metadata.get("gate", {})
+    if gate:
+        st.caption(
+            "Selection gate (validation): "
+            + ("PASSED — model beats all validation baselines before artifacts were written"
+               if gate.get("passed") else
+               "FAILED — shipped via --allow-baseline-failure; disclose this in the report")
+        )
 
     # Baseline comparison
     st.subheader("🏁 Baseline Comparison (Test Set)")
-    metrics = metadata["metrics"]
 
-    baseline_df = pd.DataFrame({
-        "Model": [
-            "Global Mean Baseline",
-            "Persistence Baseline",
-            f"{metadata['model_type']} (Test)",
-        ],
-        "MAE": [
-            metrics["global_mean_baseline"]["mae"],
-            metrics["persistence_baseline"]["mae"],
-            metrics["winner_test"]["mae"],
-        ],
-        "RMSE": [
-            metrics["global_mean_baseline"]["rmse"],
-            metrics["persistence_baseline"]["rmse"],
-            metrics["winner_test"]["rmse"],
-        ],
-        "R²": [
-            metrics["global_mean_baseline"]["r2"],
-            metrics["persistence_baseline"]["r2"],
-            metrics["winner_test"]["r2"],
-        ],
-        "Directional Accuracy": [
-            metrics["global_mean_baseline"]["directional_accuracy"],
-            metrics["persistence_baseline"]["directional_accuracy"],
-            metrics["winner_test"]["directional_accuracy"],
-        ],
-    })
+    def _row(label: str, m: Dict) -> Dict:
+        return {
+            "Model": label,
+            "MAE": m.get("mae"),
+            "RMSE": m.get("rmse"),
+            "R²": m.get("r2"),
+            "Directional accuracy": m.get("directional_accuracy"),
+            "Majority-class rate": m.get("directional_majority_rate"),
+            "Directional skill": (
+                m["directional_skill"] if m.get("directional_skill") is not None else None
+            ),
+        }
 
-    # Highlight best model
+    rows = [
+        _row("Global Mean Baseline", metrics["global_mean_baseline"]),
+        _row("Persistence Baseline", metrics.get("persistence_baseline", {})),
+    ]
+    if "country_historical_mean_baseline" in metrics:
+        rows.append(_row("Country Historical Mean Baseline",
+                         metrics["country_historical_mean_baseline"]))
+    rows.append(_row(f"{metadata['model_type']} (Test)", metrics["winner_test"]))
+    baseline_df = pd.DataFrame(rows)
+
     st.dataframe(
         baseline_df.style.format({
             "MAE": "{:.3f}",
             "RMSE": "{:.3f}",
             "R²": "{:.3f}",
-            "Directional Accuracy": "{:.1%}",
+            "Directional accuracy": "{:.1%}",
+            "Majority-class rate": "{:.1%}",
+            "Directional skill": "{:+.1%}",
         }),
         use_container_width=True,
         hide_index=True,
+    )
+    st.caption(
+        "H4: raw directional accuracy equals the majority-class rate for any "
+        "constant-sign predictor. 'Directional skill' = accuracy − majority rate; "
+        "values near zero mean no directional information beyond the class prior."
     )
 
     # Actual vs Predicted
@@ -662,15 +897,56 @@ def render_performance_page(
     st.pyplot(fig)
     plt.close(fig)
 
-    # Feature Importance
-    st.subheader("🔍 Feature Importance (Permutation)")
-    fig = plot_feature_importance(
-        importance=feature_importance,
-        title="Permutation Feature Importance (Test Set)",
-        top_n=14,
+    # Feature Importance (validation, with significance flags - H1)
+    st.subheader("🔍 Feature Importance (Permutation, Validation Set)")
+    imp = feature_importance
+    significant = imp[imp["is_significant"]]
+    noise = imp[~imp["is_significant"]]
+
+    if len(significant) > 0:
+        plot_series = pd.Series(
+            significant["importance_mean"].values, index=significant["feature"].values)
+        fig = plot_feature_importance(
+            importance=plot_series,
+            title="Permutation importance — CI excludes 0 (validation set)",
+            top_n=14,
+        )
+        st.pyplot(fig)
+        plt.close(fig)
+    else:
+        st.warning(
+            "No feature has a permutation-importance CI excluding zero: on this "
+            "model, feature-level attribution is indistinguishable from noise. "
+            "No directional claims are made."
+        )
+    st.caption(
+        f"{len(significant)}/{len(imp)} features significant at 95%. Importance "
+        "magnitude carries NO directional meaning (H1) — sign claims come only "
+        "from Ridge coefficients, in the panel below."
     )
-    st.pyplot(fig)
-    plt.close(fig)
+    if len(noise) > 0:
+        with st.expander(f"Features not distinguishable from noise ({len(noise)})"):
+            st.dataframe(
+                noise[["feature", "importance_mean", "ci_lower", "ci_upper"]].style.format(
+                    {"importance_mean": "{:+.4f}", "ci_lower": "{:+.4f}",
+                     "ci_upper": "{:+.4f}"}),
+                use_container_width=True, hide_index=True,
+            )
+
+    with st.expander("Ridge standardized coefficients (direction view, training fit)"):
+        rc_path = Path("models/ridge_coefficients.parquet")
+        if rc_path.exists():
+            rc = pd.read_parquet(rc_path)
+            st.dataframe(
+                rc[["feature", "coefficient"]].style.format({"coefficient": "{:+.4f}"}),
+                use_container_width=True, hide_index=True,
+            )
+            st.caption(
+                "Association only, from the linear benchmark — coefficients use the "
+                "post-ColumnTransformer feature order (H2-safe mapping). Not causal."
+            )
+        else:
+            st.info("Run scripts/finalize_model.py to generate ridge_coefficients.parquet.")
 
     # Metrics by year
     st.subheader("📅 Performance by Year (Test Set)")
@@ -679,8 +955,9 @@ def render_performance_page(
             "MAE": np.mean(np.abs(g["actual"] - g["predicted"])),
             "RMSE": np.sqrt(np.mean((g["actual"] - g["predicted"])**2)),
             "Directional Accuracy": ((g["actual"] >= 0) == (g["predicted"] >= 0)).mean(),
+            "Majority Rate": max((g["actual"] >= 0).mean(), (g["actual"] < 0).mean()),
             "N": len(g),
-        })
+        }), include_groups=False
     ).reset_index()
 
     st.dataframe(
@@ -688,6 +965,7 @@ def render_performance_page(
             "MAE": "{:.3f}",
             "RMSE": "{:.3f}",
             "Directional Accuracy": "{:.1%}",
+            "Majority Rate": "{:.1%}",
         }),
         use_container_width=True,
         hide_index=True,
@@ -695,17 +973,18 @@ def render_performance_page(
 
     # Model limitations
     st.subheader("⚠️ Model Limitations")
-    st.markdown("""
+    st.markdown(f"""
+    - **Parity, not victory:** the model's paired 95% CI vs the global-mean baseline
+      includes zero (see banner above). Treat predictions as the mean plus noise.
     - **Temporal generalization only:** Model evaluates prediction for future years of
       countries seen during training, not for completely unseen countries.
-    - **Negative R² on test set:** The model does not outperform a horizontal line
-      (global mean) in terms of explained variance. This is common for noisy
-      macroeconomic prediction tasks.
     - **Association ≠ Causation:** Feature importance reflects predictive association,
       not causal effect. See Causal Disclaimer on Overview and Scenario pages.
-    - **COVID-19 period:** Validation period (2018–2020) includes the 2020 shock.
-      Test period (2021+) is post-COVID.
-    - **Limited features:** Only 14 WDI indicators; many growth determinants omitted.
+    - **COVID-19 period:** validation TARGET years (2019–2021) include the 2020 shock.
+      Test TARGET years (2022–2024) are post-COVID. Refit policy is pre-registered
+      (`{metadata.get('refit_strategy', 'train_only')}`).
+    - **Limited features:** {metadata['n_features']} WDI indicators; many growth
+      determinants omitted.
     - **Median imputation:** Missing values filled with training median, which may
       not reflect country-specific conditions.
     """)
@@ -722,7 +1001,6 @@ def render_scenario_page(
     selected_iso3: str,
     selected_country_name: str,
     config_features: List[Dict],
-    feature_importance: pd.Series,
 ):
     """Render the Scenario Explorer page."""
     st.title("🎯 Scenario Explorer")
@@ -776,14 +1054,59 @@ def render_scenario_page(
         ])
         st.dataframe(baseline_display, use_container_width=True, hide_index=True)
 
-    # Scenario controls
+    # Scenario controls. H3 FIX: all ranges/percentiles come from the TRAINING
+    # window (spec section 14), not the full panel — otherwise a user could set
+    # inflation to 80% and get no warning because 80% < full-panel P99 (92%).
+    train_data = get_training_data(processed_data, metadata["train_end"])
     st.subheader("🎚️ Adjust Scenario Indicators")
-    st.caption("Modify up to 5 key indicators. Sliders use full observed data range. "
-               "Values outside the 1st–99th percentile trigger extrapolation warnings.")
+    st.caption(
+        "Modify up to 5 indicators. Slider ranges and P1–P99 warning bands are "
+        f"the observed **training** distribution (2000–{metadata['train_end']}); "
+        "values outside the training P1–P99 trigger extrapolation warnings."
+    )
 
-    scenario_features = get_scenario_features(metadata, config_features)
+    # B12: only offer sliders the model can respond to *for this row*. The
+    # deployed model splits on 8 of its 14 inputs, and for any given country
+    # -year fewer than that are reachable, so a fixed list produces sliders
+    # that silently do nothing.
+    probe_baseline = pd.DataFrame(
+        [{feat: baseline_values.get(feat, np.nan) for feat in feature_names}],
+        columns=feature_names,
+    )
+    responsiveness = probe_feature_responsiveness(
+        pipeline, probe_baseline, train_data, feature_names
+    )
+    scenario_features = get_scenario_features(
+        metadata, config_features, pipeline, responsiveness
+    )
+
+    inert_features = [
+        f for f in feature_names
+        if responsiveness.get(f, 0.0) <= 1e-9 and f not in scenario_features
+    ]
+    if inert_features:
+        with st.expander(
+            f"Why these indicators? ({len(inert_features)} cannot move this "
+            f"prediction)",
+            expanded=False,
+        ):
+            st.markdown(
+                f"For **{selected_country_name} {int(selected_year)}**, sweeping the "
+                "following indicators across their full training range does not "
+                "change the model's prediction at all — this country-year never "
+                "reaches a decision point that uses them. Rather than show sliders "
+                "that silently do nothing, the page leaves them out:\n\n"
+                + "\n".join(
+                    f"- {get_feature_display_name(f, config_features)}"
+                    for f in inert_features
+                )
+                + "\n\nThis matches the evaluation: shuffling most of these columns "
+                "at random leaves the model's error unchanged. Only 2 of 14 "
+                "indicators had an effect distinguishable from noise. The set can "
+                "differ by country and year."
+            )
+
     scenario_changes = {}
-    all_warnings = []
 
     # Create sliders in columns
     n_cols = 3
@@ -792,40 +1115,45 @@ def render_scenario_page(
     for i, feat in enumerate(scenario_features):
         with cols[i % n_cols]:
             display_name = get_feature_display_name(feat, config_features)
-            data_min, data_max = get_feature_range(processed_data, feat)
-            p1, p99 = get_feature_percentiles(processed_data, feat)
+            data_min, data_max = get_feature_range(train_data, feat)
+            p1, p99 = get_feature_percentiles(train_data, feat)
             baseline_val = baseline_values.get(feat, np.nan)
 
-            # Default to baseline if available, else midpoint of P1-P99
+            # Default to baseline if available, else midpoint of training P1-P99
             if pd.notna(baseline_val):
                 default_val = float(baseline_val)
             else:
                 default_val = (p1 + p99) / 2
 
-            # Slider with full data range
+            # B9 (plan v3): clamp observed defaults into the training band so a
+            # slider can never silently start outside guardrail support.
+            clamped = float(np.clip(default_val, data_min, data_max))
+            if abs(clamped - default_val) > 1e-9:
+                st.caption(
+                    f"Observed value {default_val:.1f} is outside the training "
+                    f"range [{data_min:.1f}, {data_max:.1f}]; slider clamped."
+                )
+            default_val = clamped
+
+            # Slider with full observed training range
             new_val = st.slider(
                 f"{display_name}",
                 min_value=float(data_min),
                 max_value=float(data_max),
                 value=float(default_val),
                 step=(data_max - data_min) / 100,
-                help=f"Range: {data_min:.1f}–{data_max:.1f} | P1–P99: {p1:.1f}–{p99:.1f}",
-                key=f"slider_{feat}",
+                help=f"Training range: {data_min:.1f}–{data_max:.1f} | "
+                     f"training P1–P99: {p1:.1f}–{p99:.1f}",
+                # Key is scoped to the country-year: without this, switching
+                # country keeps the previous country's slider positions while
+                # the Baseline column updates, so the two silently disagree.
+                key=f"slider_{selected_iso3}_{int(selected_year)}_{feat}",
             )
             scenario_changes[feat] = new_val
 
-            # Check extrapolation (outside P1-P99)
-            if new_val < p1 or new_val > p99:
-                all_warnings.append(
-                    f"**Warning:** {display_name} = {new_val:.1f} is outside the "
-                    f"historical P1–P99 range ({p1:.1f}–{p99:.1f}). "
-                    f"The result may be unreliable due to extrapolation."
-                )
-
-    # Display warnings
-    if all_warnings:
-        for w in all_warnings:
-            st.warning(w)
+    # Display warnings (single source of truth, training-calibrated)
+    for w in check_extrapolation_warning(scenario_changes, train_data):
+        st.warning(w)
 
     # Prepare input and predict
     scenario_input = prepare_scenario_input(baseline_values, scenario_changes, feature_names)
@@ -862,32 +1190,58 @@ def render_scenario_page(
             help="Scenario minus baseline (percentage points)"
         )
 
-    # Show feature contribution to change (approximation using feature importance)
+    # Show what actually moved the prediction: a TRUE one-at-a-time model delta.
+    # H1: multiplying a permutation importance by a raw unit change is
+    # dimensionally meaningless, so that heuristic ("Approx. Contribution")
+    # is removed entirely; each row now re-runs the deployed model.
     st.subheader("🔬 Indicators Driving the Change")
     change_contributions = []
     for feat, new_val in scenario_changes.items():
         baseline_val = baseline_values.get(feat, np.nan)
-        if pd.notna(baseline_val):
-            change = new_val - baseline_val
-            importance = feature_importance.get(feat, 0)
-            # Approximate contribution: importance * direction * normalized change
-            contrib = importance * change
-            change_contributions.append({
-                "Feature": get_feature_display_name(feat, config_features),
-                "Baseline": f"{baseline_val:.1f}",
-                "Scenario": f"{new_val:.1f}",
-                "Change": f"{change:+.1f}",
-                "Importance": f"{importance:.3f}",
-                "Approx. Contribution": f"{contrib:+.3f}",
-            })
+        if pd.isna(baseline_val):
+            continue
+        probe = baseline_input.copy()
+        probe[feat] = new_val
+        delta = float(pipeline.predict(probe)[0] - baseline_pred)
+        # B13: keep these numeric. Pre-formatting them as strings made the
+        # sort below call abs() on str and raise TypeError.
+        change_contributions.append({
+            "Feature": get_feature_display_name(feat, config_features),
+            "Baseline": float(baseline_val),
+            "Scenario": float(new_val),
+            "Change": float(new_val) - float(baseline_val),
+            "Individual effect (pp)": delta,
+        })
 
     if change_contributions:
         contrib_df = pd.DataFrame(change_contributions)
-        contrib_df = contrib_df.sort_values("Approx. Contribution", key=abs, ascending=False)
-        st.dataframe(contrib_df, use_container_width=True, hide_index=True)
+        contrib_df = contrib_df.sort_values(
+            "Individual effect (pp)",
+            key=lambda s: s.abs(),
+            ascending=False,
+        )
+        st.dataframe(
+            contrib_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Baseline": st.column_config.NumberColumn(format="%.1f"),
+                "Scenario": st.column_config.NumberColumn(format="%.1f"),
+                "Change": st.column_config.NumberColumn(format="%+.1f"),
+                "Individual effect (pp)": st.column_config.NumberColumn(format="%+.3f"),
+            },
+        )
+        if contrib_df["Individual effect (pp)"].abs().max() < 5e-4:
+            st.info(
+                "None of the indicators you moved changed the prediction "
+                "meaningfully. That is a real property of this model, not a bug "
+                "in the page — it barely responds to these inputs, which is the "
+                "same finding the evaluation reports."
+            )
         st.caption(
-            "Note: 'Approx. Contribution' is a rough estimate (importance × change) "
-            "and does not account for feature interactions or non-linear effects."
+            "Each row re-runs the model changing only that indicator. Individual "
+            "effects need not sum to the total because the model is non-linear. "
+            "These are the model's responses to different inputs, not causal effects."
         )
 
     # Causal disclaimer on Scenario page
