@@ -173,19 +173,137 @@ def load_country_metadata() -> pd.DataFrame:
 # =============================================================================
 
 def get_feature_display_name(feature_code: str, config_features: List[Dict]) -> str:
-    """Map WDI feature code to human-readable name."""
+    """Map WDI feature code to human-readable name.
+
+    NY.GDP.PCAP.KD.ZG is carried as a predictor (this year's growth) but lives
+    under `target` in the config rather than `features`, so the lookup below
+    misses it and the raw code leaks into the UI. Named explicitly.
+    """
     for feat in config_features:
         if feat["code"] == feature_code:
             return feat["name"]
+    if feature_code == "NY.GDP.PCAP.KD.ZG":
+        return "GDP per capita growth, current year (annual %)"
     return feature_code
 
 
-def get_scenario_features(metadata: Dict, config_features: List[Dict]) -> List[str]:
+def get_model_responsive_features(pipeline: SklearnPipeline, feature_names: List[str]) -> List[str]:
+    """Feature codes the fitted model can actually respond to.
+
+    B12: the deployed HistGradientBoosting model splits on only 8 of its 14
+    inputs — the remaining 6 were never selected by any tree, so changing them
+    cannot move a prediction by even a floating-point ulp. Reading the split
+    features straight off the fitted predictors is exact: no threshold, no
+    proxy metric. Falls back to all features if the estimator does not expose
+    the private tree structure (e.g. a Ridge pipeline or a future sklearn).
+
+    Args:
+        pipeline: The fitted sklearn pipeline.
+        feature_names: Ordered feature codes matching the model's input columns.
+
+    Returns:
+        Feature codes used in at least one split, ordered by split count
+        (most-used first). All features if introspection is unavailable.
+    """
+    model = pipeline.steps[-1][1]
+    predictors = getattr(model, "_predictors", None)
+    if not predictors:
+        return list(feature_names)
+
+    split_counts: Dict[int, int] = {}
+    try:
+        for stage in predictors:
+            for predictor in stage:
+                for node in predictor.nodes:
+                    if not node["is_leaf"]:
+                        idx = int(node["feature_idx"])
+                        split_counts[idx] = split_counts.get(idx, 0) + 1
+    except (AttributeError, KeyError, IndexError, TypeError):
+        return list(feature_names)
+
+    if not split_counts:
+        return list(feature_names)
+
+    ordered = sorted(split_counts.items(), key=lambda kv: -kv[1])
+    return [feature_names[i] for i, _ in ordered if i < len(feature_names)]
+
+
+def probe_feature_responsiveness(
+    pipeline: SklearnPipeline,
+    baseline_row: pd.DataFrame,
+    train_data: pd.DataFrame,
+    feature_names: List[str],
+    n_probe: int = 9,
+) -> Dict[str, float]:
+    """How much each feature can move the prediction *for this exact row*.
+
+    Being split on somewhere in the forest is necessary but not sufficient: a
+    tree-ensemble prediction only responds to a feature if this row actually
+    reaches a node that splits on it. Ghana 2019, for example, is routed away
+    from every internet-usage split, so that slider is inert for Ghana even
+    though the model uses it elsewhere. The only exact test is to sweep the
+    value and watch the prediction, which is what this does — one batched
+    predict over all features and probe points.
+
+    Args:
+        pipeline: Fitted pipeline.
+        baseline_row: Single-row frame of the country-year's feature values.
+        train_data: Training-window rows, used for each feature's sweep range.
+        feature_names: Ordered model input columns.
+        n_probe: Probe points per feature across the training range.
+
+    Returns:
+        Feature code -> prediction spread (max - min) across its sweep.
+    """
+    probe_rows: List[pd.DataFrame] = []
+    owners: List[str] = []
+    for feat in feature_names:
+        if feat not in train_data.columns:
+            continue
+        vals = train_data[feat].dropna()
+        if len(vals) == 0:
+            continue
+        lo, hi = float(vals.min()), float(vals.max())
+        if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
+            continue
+        block = pd.concat([baseline_row] * n_probe, ignore_index=True)
+        block[feat] = np.linspace(lo, hi, n_probe)
+        probe_rows.append(block)
+        owners.extend([feat] * n_probe)
+
+    if not probe_rows:
+        return {}
+
+    probes = pd.concat(probe_rows, ignore_index=True).reindex(columns=feature_names)
+    preds = pipeline.predict(probes)
+    out: Dict[str, float] = {}
+    owner_arr = np.asarray(owners)
+    for feat in dict.fromkeys(owners):
+        block_preds = preds[owner_arr == feat]
+        out[feat] = float(block_preds.max() - block_preds.min())
+    return out
+
+
+def get_scenario_features(
+    metadata: Dict,
+    config_features: List[Dict],
+    pipeline: Optional[SklearnPipeline] = None,
+    responsiveness: Optional[Dict[str, float]] = None,
+    tolerance: float = 1e-9,
+) -> List[str]:
     """Select 3-5 features suitable for scenario exploration.
 
-    Chooses features with understandable units and adequate coverage.
+    B12 FIX: this used to return a hardcoded wish list of "policy-relevant"
+    indicators (electricity, internet, capital formation, trade, inflation).
+    The deployed model never splits on five of them, so every slider on the
+    page was inert — the prediction could not change no matter how far a user
+    dragged them. Selection is now driven by measured responsiveness for the
+    country-year on screen (see probe_feature_responsiveness), falling back to
+    the model's global split features, then to the raw feature list.
+    Interpretable indicators are still preferred; actually moving the
+    prediction is the hard constraint.
     """
-    # Priority features for scenario explorer (interpretable, policy-relevant)
+    # Interpretable, policy-legible indicators, in preference order.
     priority_codes = [
         "EG.ELC.ACCS.ZS",      # Electricity access (%)
         "IT.NET.USER.ZS",      # Internet usage (%)
@@ -194,12 +312,41 @@ def get_scenario_features(metadata: Dict, config_features: List[Dict]) -> List[s
         "FP.CPI.TOTL.ZG",      # Inflation (%)
         "SP.DYN.LE00.IN",      # Life expectancy (years)
         "NY.GDP.PCAP.CD",      # GDP per capita (current US$)
+        "SP.POP.GROW",         # Population growth (annual %)
+        "BX.KLT.DINV.WD.GD.ZS",  # FDI net inflows (% of GDP)
+        "SP.URB.TOTL.IN.ZS",   # Urban population (%)
+        "FS.AST.PRVT.GD.ZS",   # Domestic credit to private sector (% of GDP)
     ]
 
     available_features = set(metadata["feature_names"])
-    scenario_features = [f for f in priority_codes if f in available_features]
+    if responsiveness:
+        # Measured for this row: keep only features that actually move it,
+        # most responsive first.
+        responsive = [
+            f for f, spread in sorted(responsiveness.items(), key=lambda kv: -kv[1])
+            if spread > tolerance
+        ]
+    elif pipeline is not None:
+        responsive = get_model_responsive_features(pipeline, metadata["feature_names"])
+    else:
+        responsive = list(metadata["feature_names"])
+    responsive_set = set(responsive)
 
-    # Ensure we have at least 3, at most 5 (pad with other available features)
+    # Interpretable AND responsive, in preference order.
+    scenario_features = [
+        f for f in priority_codes if f in available_features and f in responsive_set
+    ]
+
+    # Top up from the remaining responsive features (most-used first).
+    if len(scenario_features) < 5:
+        for f in responsive:
+            if f not in scenario_features:
+                scenario_features.append(f)
+            if len(scenario_features) >= 5:
+                break
+
+    # Last resort: if the model exposed no usable features at all, fall back to
+    # the raw feature list so the page still renders.
     if len(scenario_features) < 3:
         for f in metadata["feature_names"]:
             if f not in scenario_features:
@@ -913,12 +1060,52 @@ def render_scenario_page(
     train_data = get_training_data(processed_data, metadata["train_end"])
     st.subheader("🎚️ Adjust Scenario Indicators")
     st.caption(
-        "Modify up to 5 key indicators. Slider ranges and P1–P99 warning bands are "
+        "Modify up to 5 indicators. Slider ranges and P1–P99 warning bands are "
         f"the observed **training** distribution (2000–{metadata['train_end']}); "
         "values outside the training P1–P99 trigger extrapolation warnings."
     )
 
-    scenario_features = get_scenario_features(metadata, config_features)
+    # B12: only offer sliders the model can respond to *for this row*. The
+    # deployed model splits on 8 of its 14 inputs, and for any given country
+    # -year fewer than that are reachable, so a fixed list produces sliders
+    # that silently do nothing.
+    probe_baseline = pd.DataFrame(
+        [{feat: baseline_values.get(feat, np.nan) for feat in feature_names}],
+        columns=feature_names,
+    )
+    responsiveness = probe_feature_responsiveness(
+        pipeline, probe_baseline, train_data, feature_names
+    )
+    scenario_features = get_scenario_features(
+        metadata, config_features, pipeline, responsiveness
+    )
+
+    inert_features = [
+        f for f in feature_names
+        if responsiveness.get(f, 0.0) <= 1e-9 and f not in scenario_features
+    ]
+    if inert_features:
+        with st.expander(
+            f"Why these indicators? ({len(inert_features)} cannot move this "
+            f"prediction)",
+            expanded=False,
+        ):
+            st.markdown(
+                f"For **{selected_country_name} {int(selected_year)}**, sweeping the "
+                "following indicators across their full training range does not "
+                "change the model's prediction at all — this country-year never "
+                "reaches a decision point that uses them. Rather than show sliders "
+                "that silently do nothing, the page leaves them out:\n\n"
+                + "\n".join(
+                    f"- {get_feature_display_name(f, config_features)}"
+                    for f in inert_features
+                )
+                + "\n\nThis matches the evaluation: shuffling most of these columns "
+                "at random leaves the model's error unchanged. Only 2 of 14 "
+                "indicators had an effect distinguishable from noise. The set can "
+                "differ by country and year."
+            )
+
     scenario_changes = {}
 
     # Create sliders in columns
@@ -957,7 +1144,10 @@ def render_scenario_page(
                 step=(data_max - data_min) / 100,
                 help=f"Training range: {data_min:.1f}–{data_max:.1f} | "
                      f"training P1–P99: {p1:.1f}–{p99:.1f}",
-                key=f"slider_{feat}",
+                # Key is scoped to the country-year: without this, switching
+                # country keeps the previous country's slider positions while
+                # the Baseline column updates, so the two silently disagree.
+                key=f"slider_{selected_iso3}_{int(selected_year)}_{feat}",
             )
             scenario_changes[feat] = new_val
 
@@ -1013,22 +1203,45 @@ def render_scenario_page(
         probe = baseline_input.copy()
         probe[feat] = new_val
         delta = float(pipeline.predict(probe)[0] - baseline_pred)
+        # B13: keep these numeric. Pre-formatting them as strings made the
+        # sort below call abs() on str and raise TypeError.
         change_contributions.append({
             "Feature": get_feature_display_name(feat, config_features),
-            "Baseline": f"{baseline_val:.1f}",
-            "Scenario": f"{new_val:.1f}",
-            "Change": f"{new_val - float(baseline_val):+.1f}",
-            "Individual effect (pp)": f"{delta:+.3f}",
+            "Baseline": float(baseline_val),
+            "Scenario": float(new_val),
+            "Change": float(new_val) - float(baseline_val),
+            "Individual effect (pp)": delta,
         })
 
     if change_contributions:
         contrib_df = pd.DataFrame(change_contributions)
-        contrib_df = contrib_df.sort_values("Individual effect (pp)", key=abs, ascending=False)
-        st.dataframe(contrib_df, use_container_width=True, hide_index=True)
+        contrib_df = contrib_df.sort_values(
+            "Individual effect (pp)",
+            key=lambda s: s.abs(),
+            ascending=False,
+        )
+        st.dataframe(
+            contrib_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Baseline": st.column_config.NumberColumn(format="%.1f"),
+                "Scenario": st.column_config.NumberColumn(format="%.1f"),
+                "Change": st.column_config.NumberColumn(format="%+.1f"),
+                "Individual effect (pp)": st.column_config.NumberColumn(format="%+.3f"),
+            },
+        )
+        if contrib_df["Individual effect (pp)"].abs().max() < 5e-4:
+            st.info(
+                "None of the indicators you moved changed the prediction "
+                "meaningfully. That is a real property of this model, not a bug "
+                "in the page — it barely responds to these inputs, which is the "
+                "same finding the evaluation reports."
+            )
         st.caption(
             "Each row re-runs the model changing only that indicator. Individual "
             "effects need not sum to the total because the model is non-linear. "
-            "These are conditional prediction deltas, not causal effects."
+            "These are the model's responses to different inputs, not causal effects."
         )
 
     # Causal disclaimer on Scenario page

@@ -168,3 +168,126 @@ def test_load_feature_importance_returns_ci_frame():
     # the app must not choke on the new schema
     out = app.load_feature_importance.__wrapped__()
     assert isinstance(out, pd.DataFrame) and len(out) > 0
+
+
+# ----------------------------------------------------------------------------
+# B12: scenario sliders must be able to move the prediction
+# ----------------------------------------------------------------------------
+
+def _load_artifacts():
+    import joblib
+    import json
+    meta = json.loads((REPO_ROOT / "models/model_metadata.json").read_text())
+    pipe = joblib.load(REPO_ROOT / "models/growth_model.joblib")
+    panel = pd.read_parquet(REPO_ROOT / "data/processed/model_data.parquet")
+    return meta, pipe, panel
+
+
+def test_deployed_model_ignores_some_features():
+    """Documents the fact that motivates B12.
+
+    If a future model does respond to every input this assertion fails loudly,
+    which is the signal to revisit the slider-selection logic rather than a bug.
+    """
+    meta, pipe, _ = _load_artifacts()
+    feats = meta["feature_names"]
+    used = app.get_model_responsive_features(pipe, feats)
+    assert set(used) < set(feats), (
+        "Deployed model now splits on every feature; revisit get_scenario_features"
+    )
+
+
+def test_scenario_sliders_are_never_inert():
+    """B12 regression: every offered slider must move the prediction.
+
+    The original bug shipped five sliders — electricity, internet, capital
+    formation, trade, inflation — that the model never splits on, so dragging
+    them changed nothing. Checked across several countries because reachability
+    is row-dependent.
+    """
+    meta, pipe, panel = _load_artifacts()
+    feats = meta["feature_names"]
+    train = app.get_training_data(panel, meta["train_end"])
+
+    for iso3 in ["GHA", "NGA", "KEN", "ZAF", "EGY"]:
+        sub = panel[panel["iso3"] == iso3]
+        if sub.empty:
+            continue
+        year = int(sub["year"].max())
+        row = sub[sub["year"] == year].iloc[0]
+        baseline = {f: row.get(f, np.nan) for f in feats}
+        probe_base = pd.DataFrame([baseline], columns=feats)
+
+        resp = app.probe_feature_responsiveness(pipe, probe_base, train, feats)
+        selected = app.get_scenario_features(meta, [], pipe, resp)
+        assert 3 <= len(selected) <= 5
+
+        for feat in selected:
+            vals = train[feat].dropna()
+            lo, hi = float(vals.min()), float(vals.max())
+            preds = []
+            for v in np.linspace(lo, hi, 20):
+                probe = probe_base.copy()
+                probe[feat] = v
+                preds.append(float(pipe.predict(probe)[0]))
+            assert max(preds) - min(preds) > 0, (
+                f"{iso3} {year}: slider {feat} cannot move the prediction"
+            )
+
+
+def test_probe_feature_responsiveness_flags_inert_features():
+    """A feature the model never uses must report zero spread."""
+    meta, pipe, panel = _load_artifacts()
+    feats = meta["feature_names"]
+    train = app.get_training_data(panel, meta["train_end"])
+    row = panel[(panel["iso3"] == "GHA") & (panel["year"] == 2019)].iloc[0]
+    probe_base = pd.DataFrame([{f: row.get(f, np.nan) for f in feats}], columns=feats)
+
+    resp = app.probe_feature_responsiveness(pipe, probe_base, train, feats)
+    assert resp, "probe returned nothing"
+    # Electricity access is never split on by the deployed model.
+    if "EG.ELC.ACCS.ZS" in resp:
+        assert resp["EG.ELC.ACCS.ZS"] == 0.0
+    assert any(v > 0 for v in resp.values()), "no feature moves the prediction"
+
+
+def test_get_scenario_features_falls_back_without_pipeline():
+    """Callers without a pipeline still get a usable list (no crash)."""
+    meta = {"feature_names": ["EG.ELC.ACCS.ZS", "IT.NET.USER.ZS",
+                              "NE.GDI.TOTL.ZS", "NE.TRD.GNFS.ZS",
+                              "FP.CPI.TOTL.ZG", "SP.DYN.LE00.IN",
+                              "NY.GDP.PCAP.CD"]}
+    out = app.get_scenario_features(meta, [])
+    assert 3 <= len(out) <= 5
+    assert set(out) <= set(meta["feature_names"])
+
+
+# ----------------------------------------------------------------------------
+# B13: the contributions table must sort without raising
+# ----------------------------------------------------------------------------
+
+def test_contribution_table_sorts_by_magnitude_not_string():
+    """B13 regression: pre-formatted strings made sort_values(key=abs) raise
+    TypeError: bad operand type for abs(): 'str'."""
+    numeric = pd.DataFrame([
+        {"Feature": "a", "Individual effect (pp)": -0.5},
+        {"Feature": "b", "Individual effect (pp)": 0.2},
+        {"Feature": "c", "Individual effect (pp)": 0.9},
+    ])
+    out = numeric.sort_values("Individual effect (pp)",
+                              key=lambda s: s.abs(), ascending=False)
+    assert list(out["Feature"]) == ["c", "a", "b"]
+
+    stringly = numeric.copy()
+    stringly["Individual effect (pp)"] = stringly["Individual effect (pp)"].map(
+        lambda v: f"{v:+.3f}")
+    with pytest.raises(TypeError):
+        stringly.sort_values("Individual effect (pp)", key=abs, ascending=False)
+
+
+def test_contribution_effects_are_numeric_in_source():
+    """The app must not re-introduce string formatting in that column."""
+    src = (REPO_ROOT / "app.py").read_text(encoding="utf-8")
+    assert '"Individual effect (pp)": f"' not in src, (
+        "Individual effect column is being formatted as a string again (B13)")
+    assert 'key=abs' not in src, "sort_values(key=abs) re-introduced (B13)"

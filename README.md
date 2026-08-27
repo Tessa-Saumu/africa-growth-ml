@@ -191,8 +191,11 @@ africa-growth-ml/
 **Status:** verified locally. The app starts, serves, and its scenario predictions and range warnings have been exercised end to end. A public Streamlit Cloud instance is **not part of this submission**; the repository is ready to deploy and the steps below are the verified path.
 
 1. Push to GitHub
-2. Connect at [Streamlit Cloud](https://share.streamlit.io), entry point `app.py`, Python 3.11
-3. No secrets and no downloads — everything needed at runtime is committed
+2. Connect at [Streamlit Cloud](https://share.streamlit.io), entry point `app.py`
+3. **Set the Python version to 3.11 or 3.12 under "Advanced settings"** before the first deploy. Cloud defaults to 3.12 and ignores `runtime.txt` and `.python-version`, so this is the only place it can be set. The model was built against numpy 1.26.x, which publishes wheels only up to Python 3.12 — on 3.13+ the install fails outright
+4. No secrets and no downloads — everything needed at runtime is committed
+
+All four pages run with no backend: the app reads committed files (`models/growth_model.joblib`, the parquet artifacts, `data/processed/`) and calls `pipeline.predict` in-process. There is no database, no API, and no training at runtime. Total artifact footprint is well under a megabyte, comfortably inside Cloud's memory limit.
 
 **Checklist**
 
@@ -200,6 +203,7 @@ africa-growth-ml/
 - [x] Imports resolve from the repo root; `pip install -e .` exposes `src.*`
 - [x] Trained model committed, not excluded by `.gitignore`
 - [x] `requirements.txt` installs cleanly, with no test tooling mixed into runtime dependencies
+- [x] Runtime pins match the versions the model was pickled with — scikit-learn does not guarantee unpickling across minor versions
 - [x] No absolute local paths anywhere, enforced by `tests/test_hardcoded_paths.py`
 - [x] No live API calls
 - [x] Model and data cached so they load once, not on every interaction
