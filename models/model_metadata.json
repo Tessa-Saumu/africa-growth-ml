@@ -112,8 +112,8 @@
       "balanced_directional_accuracy": 0.5131091479053862
     }
   },
-  "created_utc": "2026-08-27T02:54:17+00:00",
-  "git_commit": "cc78b7fbd4c3fafbad715c7f6e860b3fc8134f06",
+  "created_utc": "2026-08-27T03:08:40+00:00",
+  "git_commit": "2920aa9839603008e66fb9efc19e7b1518daac6f",
   "library_versions": {
     "python": "3.11.2",
     "scikit_learn": "1.9.0",

@@ -1,6 +1,8 @@
+# Africa Growth Explorer - Streamlit settings
+# M10: enableCORS removed (triggers a security warning at boot); no hardcoded
+# port (Cloud manages its own). Theme values mirror src/visualization.py.
+
 [theme]
-# Africa Growth Explorer - Project Visual Language
-# Colors from src/visualization.py PROJECT_PALETTE
 primaryColor = "#1B4F72"
 backgroundColor = "#F8F9FA"
 secondaryBackgroundColor = "#FFFFFF"
@@ -8,11 +10,7 @@ textColor = "#2C3E50"
 font = "sans serif"
 
 [server]
-# Streamlit Cloud deployment settings
 headless = true
-enableCORS = false
-enableXsrfProtection = true
-port = 8501
 
 [browser]
 gatherUsageStats = false

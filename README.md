@@ -181,6 +181,9 @@ africa-growth-ml/
 - [x] No live API calls
 - [x] `@st.cache_resource` for the model, `@st.cache_data` for data
 - [x] `.streamlit/config.toml` free of `enableCORS`/`port` overrides
+- [ ] App screenshots — **not captured in this environment** (no browser
+      binary reachable); see `docs/screenshots/README.md` for why and for the
+      exact capture list to add after deployment
 
 ---
 
