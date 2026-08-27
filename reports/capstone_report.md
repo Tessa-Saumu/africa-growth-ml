@@ -26,9 +26,15 @@ The World Bank's World Development Indicators are the natural data source: compr
 
 ### The headline result, stated first
 
-Fourteen WDI indicators observed at year *t* carry **no statistically significant information** about year *t+1* GDP per capita growth beyond the unconditional mean.
+Knowing a country's development indicators this year does **not** help predict its growth next year — at least not beyond what you would get by guessing the historical average.
 
-The deployed model reaches test MAE 1.82 against 1.90 for a predict-the-mean baseline. The paired 95% confidence interval on that improvement is [−0.04, +0.19], which includes zero. This is a null result, and it is the substantive finding of the project rather than a defect to be tuned away. Section 8 explains why it is robust and what it means; Section 12 explains why a null established under a rigorous protocol is worth more than a win established under a weak one.
+In plain terms: the model is no better at forecasting growth than simply guessing the historical average every time.
+
+The detail behind that claim. The model's predictions miss the true growth figure by 1.82 percentage points on average. A trivial rule — ignore every indicator and predict the historical average for every country — misses by 1.90. So the model is ahead by 0.07 percentage points.
+
+That margin is too small to trust. The test set holds only 150 country-years, so the result depends partly on which 150 happened to land there. To measure that, the test set was resampled 5,000 times and the comparison re-run on each resample. Across those resamples the model's margin ranged from **0.04 worse** than the trivial rule to **0.19 better**. Since that range covers outcomes where the model *loses*, the 0.07 lead cannot be separated from chance.
+
+The conclusion is therefore not "the model wins narrowly" but "the model and the trivial rule perform the same". Section 8 sets out why that answer holds up under scrutiny, and Section 12 explains why a well-established negative answer is worth more than a poorly-established positive one.
 
 ---
 
@@ -52,7 +58,9 @@ Development analysts, economic researchers, policy teams, NGOs and students.
 
 ### Expected impact
 
-A screening tool for comparing development profiles against modelled growth expectations, with explicit extrapolation guardrails and a stated causal boundary. Given the null result, the honest description of what this delivers is a **falsification harness**: it demonstrates what a leakage-free protocol concludes about forecastable signal in annual WDI data. That is a different contribution from a validated forecaster, and the report does not conflate the two.
+A screening tool for comparing development profiles against modelled growth expectations, with warnings when a user pushes it beyond the range of data it learned from, and a clear statement of what it cannot support.
+
+Since the answer turned out to be negative, the honest description is narrower than "a forecasting tool". What this delivers is a **rigorous test of whether forecasting is possible at all** with this data — and the answer is no. That is a real result, but it is not the same as a working forecaster, and this report does not blur the two.
 
 ### Success criterion, fixed in advance
 
@@ -166,7 +174,21 @@ Before any artifact is written, the winner must beat **every validation baseline
 
 ### Metrics
 
-MAE in percentage points is primary. RMSE and R² are secondary. Directional accuracy is always reported next to the majority-class rate and directional skill, for reasons §7 makes concrete, and balanced directional accuracy is computed alongside. Additional diagnostics: metrics by year and country, worst errors, bootstrap confidence intervals, and a paired bootstrap significance test against the global-mean baseline.
+The headline metric is **MAE** — mean absolute error, the average gap between predicted and actual growth, in percentage points. An MAE of 1.82 means predictions are off by 1.82 points in a typical year. Lower is better.
+
+Two supporting metrics:
+
+- **RMSE** — like MAE, but it penalises large misses more heavily. A gap between RMSE and MAE signals that a few big errors dominate.
+- **R²** — the share of variation in growth the model explains, where 1.0 is perfect and 0.0 means it does no better than always predicting the average. Negative values mean it does *worse* than that.
+
+**Directional accuracy** — how often the model gets the sign right, growth up or down — is always shown next to two companions, because on its own it flatters any model on this data:
+
+- the **majority-class rate**, meaning how often you would be right by always guessing the more common direction, and
+- **directional skill**, the difference between the two. Skill is what matters; accuracy alone is not.
+
+Section 7 shows exactly how misleading the raw figure is here.
+
+Also reported: results broken down by year and country, the largest individual errors, and a significance test described in §7 that asks whether the model's lead over the simple baselines could be chance.
 
 ### Test-set discipline
 
@@ -281,15 +303,29 @@ Selection happened on validation, before any artifact was written: HGB at 3.89 b
 
 ### Statistical significance
 
-A paired bootstrap over test absolute-residual differences against the global-mean baseline, 5,000 resamples, seed 42:
+The model beats the predict-the-average baseline by 0.07 percentage points. The question is whether that lead is real or luck.
 
-> **Paired MAE improvement +0.07 pp, 95% CI [−0.04, +0.19]. The interval spans zero. Not significant at 95%.**
+The test set contains 150 country-years. Had a different 150 landed in it, the margin would have come out differently. To measure how much differently, the test set was resampled with replacement 5,000 times — drawing 150 rows at random each time, allowing repeats — and the model-versus-baseline comparison was re-run on every resample. Both were always scored on the same rows, so the comparison stays fair.
 
-The model achieves parity with the unconditional mean, not victory over it. Put plainly: on genuinely held-out post-pandemic years, a tuned gradient-boosting ensemble over 14 WDI indicators cannot beat "predict 1.6%" once that mean is estimated from training data.
+That produces 5,000 versions of the margin. The middle 95% of them fall between **0.04 worse** and **0.19 better**:
 
-### Directional accuracy needs its denominator
+> **The model's lead over predicting the average: 0.07 percentage points.**
+> **Plausible range across resamples: −0.04 to +0.19.**
+> **That range includes zero and negative values, so the lead is not reliable.**
 
-80.67% of test targets are non-negative, so **any** always-positive predictor — the global-mean baseline included — scores 80.67% directional accuracy by construction. Placed next to the majority-class rate, the deployed model's directional **skill is 0.00 pp** and its balanced directional accuracy is 51.3%. There is no sign information beyond the class prior. Reporting the raw 80.7% alone would be misleading, which is why it never appears alone in this project.
+If the model genuinely carried signal, nearly every resample would show it ahead. Instead a meaningful share show it behind. The honest reading is that the model and the trivial rule perform the same.
+
+Stated without hedging: on genuinely unseen post-pandemic years, a tuned gradient-boosting model over 14 WDI indicators cannot beat "always predict 1.6% growth".
+
+### Why the 80.7% figure is not the good news it looks like
+
+The model predicts the correct direction — growth positive or negative — 80.7% of the time. In isolation that sounds strong. It is not.
+
+Growth was positive in 80.7% of test country-years. So a rule that ignores the data entirely and always says "growth will be positive" also scores 80.7%. The model has matched a rule that requires no model.
+
+The useful measure is the gap between the two, and here it is **exactly zero**. A second check tells the same story: scoring the up-years and down-years separately and averaging gives 51.3%, which is a coin flip.
+
+Quoting 80.7% on its own would misrepresent the result, so it never appears in this project without the comparison beside it.
 
 ### Fit quality on the test set (n=150)
 
@@ -301,11 +337,13 @@ The model achieves parity with the unconditional mean, not victory over it. Put 
 
 **Figure 5.** Residuals against predicted values. The cloud centres on zero with no visible slope, confirming near-zero bias. Vertical spread runs to roughly ±5 pp for typical observations and beyond ±10 pp at the extremes — that is the honest error magnitude. Because predictions occupy such a narrow horizontal range, residual variance is driven almost entirely by variation in the actual outcome rather than by anything the model imposed.
 
-**Mean residual: +0.08 pp.** Bootstrap 95% CIs over 2,000 resamples: MAE [1.52, 2.18], RMSE [2.16, 3.41]. Both intervals contain the corresponding global-mean baseline values, which is the same null result seen from another angle.
+**Average error direction: +0.08 pp** — the model is neither systematically optimistic nor systematically pessimistic, which is what the train-only refit was chosen to achieve.
+
+Resampling the test set 2,000 times puts the model's MAE somewhere between 1.52 and 2.18, and its RMSE between 2.16 and 3.41. The predict-the-average baseline scores 1.90 and 2.84 — both inside those ranges. That is the same finding from another angle: the two are not reliably distinguishable.
 
 ### Refit sensitivity
 
-Refitting the selected model on train+val instead of train-only yields test MAE **2.03** with a mean bias of **−0.86 pp** — worse than the deployed model and systematically depressed, exactly as the pre-registered rationale predicted. The primary result uses train-only. This paragraph documents the counterfactual that was rejected in advance, not a result discovered afterwards.
+Training the same model on the COVID years as well, rather than stopping before them, pushes test error up to **2.03** and leaves predictions running **0.86 points low** across the board — worse on both counts, exactly as expected. The deployed model therefore stops before COVID. This alternative was ruled out in advance on the reasoning above, not discarded afterwards because the numbers came out badly.
 
 ### Performance by year
 
@@ -337,9 +375,13 @@ Test rows without a current-year growth value are dropped globally, so the model
 
 ## 8. Interpretation
 
-### Magnitude: permutation importance with confidence intervals
+### Which indicators the model actually uses
 
-Computed on validation, never on the sealed test set.
+To find out how much any single indicator matters, its column is shuffled at random — breaking the link between that indicator and the outcome — and the model is re-scored. If accuracy collapses, the indicator was carrying weight. If nothing changes, it was not. Shuffling 30 times per indicator gives a range rather than a single number, which matters when the effects are small.
+
+The `significant` column answers one question: across those 30 shuffles, was the indicator's effect reliably above zero, or could it just as easily have been nothing? "Noise" means the latter.
+
+This is measured on the validation split, never on the sealed test set.
 
 | feature | name | mean | std | ci_lower | ci_upper | significant |
 |---|---|---|---|---|---|---|
@@ -358,11 +400,13 @@ Computed on validation, never on the sealed test set.
 | NE.GDI.TOTL.ZS | Gross capital formation (% of GDP) | 0.000 | 0.000 | -0.001 | 0.001 | noise |
 | SL.UEM.TOTL.ZS | Unemployment (% of labour force) | 0.000 | 0.001 | -0.001 | 0.001 | noise |
 
-**Two of fourteen features are distinguishable from zero at 95%**, both tiny. Twelve have intervals straddling zero. There is no dominant predictor here, and no honest way to construct a narrative about growth drivers from this table.
+**Only two of the fourteen indicators have a measurable effect, and both are tiny.** For the other twelve, shuffling the column at random makes no reliable difference to the predictions — the model was not really using them.
+
+There is no dominant predictor here. Any story about "the top drivers of African growth" built from this table would be reading meaning into noise.
 
 ![Permutation importance, validation set, CI-significant features only](../figures/modeling_feature_importance.png)
 
-**Figure 6.** The only two features whose importance has a 95% interval excluding zero. The other twelve are omitted deliberately: plotting noise invites over-reading. Note the axis scale — the larger effect is 0.046 in MAE-degradation units against a validation MAE near 3.9, roughly one percent. These are statistically detectable but economically negligible. GDP per capita's appearance is best read as the model latching onto the development-level cluster from Figure 3, not as evidence that income level drives next-year growth.
+**Figure 6.** The only two indicators whose effect was reliably above zero. The other twelve are left off deliberately — plotting noise invites people to read meaning into it. Note the scale on the horizontal axis. Scrambling the stronger of the two worsens predictions by 0.046 percentage points, against typical errors of about 3.9. That is roughly a one percent effect: real enough to measure, far too small to act on. GDP per capita shows up here because it stands in for the whole cluster of correlated development measures from Figure 3, not because income level drives next year's growth.
 
 ### Direction: Ridge standardised coefficients
 
@@ -377,7 +421,9 @@ Fitted on training data at the CV-selected α=3000.
 | NE.GDI.TOTL.ZS | Gross capital formation (% of GDP) | 0.041 |
 | EG.ELC.ACCS.ZS | Access to electricity (%) | 0.039 |
 
-Every |coefficient| is ≤0.14 standardised units against a target with roughly 3.9 pp validation MAE. Even the linear association structure is faint, and the heaviest available shrinkage fits best. Direction here is association only: the negative GDP per capita coefficient reflects a conditional relationship within a small collinear feature set, and is not a claim that richer countries grow more slowly.
+Every coefficient is 0.14 or smaller, against typical prediction errors of around 3.9 percentage points. Even the straight-line relationships are weak — and the tuning process chose the setting that flattens them hardest toward zero, which is itself a sign there was little to find.
+
+These figures show association, not cause. The negative coefficient on GDP per capita does **not** mean richer countries grow more slowly; it reflects how that one variable behaves once the other thirteen — several measuring nearly the same thing — are already in the model.
 
 ### Why this is a finding rather than a shrug
 
@@ -394,10 +440,10 @@ Every |coefficient| is ≤0.14 standardised units against a target with roughly 
 - **Confounding.** Electricity access correlates with institutional quality, geography and resource rents.
 - **Reverse causality.** Growth funds infrastructure at least as readily as infrastructure drives growth.
 - **Omitted variables.** Commodity prices, political stability, trading-partner growth and climate are all absent.
-- **Measurement error.** WDI series are modelled estimates in low-capacity statistical systems; errors-in-variables attenuates associations.
+- **Measurement error.** Many WDI figures are estimates rather than direct counts, produced by statistical agencies with limited resources. Noisy inputs make real relationships look weaker than they are.
 - **Pooling.** One model across 52 economies imposes homogeneous slopes the data does not support.
 
-The model is a conditional predictor. Scenario slider movements in the application are conditional prediction deltas, never counterfactual policy effects.
+The model answers "what does this profile typically go with?", not "what would happen if we changed this?". Moving a slider in the application shows how the prediction shifts for a country described that way — not the effect of a policy that brought the change about.
 
 ---
 
@@ -420,9 +466,9 @@ A four-page Streamlit application, loading committed artifacts only — no retra
 
 ## 10. Causal Limitations
 
-Development indicators are endogenous. Electricity access, internet penetration and credit depth all correlate with governance quality and structural features the model cannot observe. Growth funds infrastructure at least as plausibly as infrastructure causes growth. Critical determinants — commodity prices, terms of trade, political stability, education quality, climate shocks, global financial conditions — are absent from the feature set. WDI figures are modelled estimates carrying non-trivial error in low-capacity statistical systems. And one pooled model imposes homogeneous relationships across 52 very different economies.
+Development indicators are tangled up with each other and with causes the model never sees. Electricity access, internet penetration and credit depth all move with governance quality and structural conditions that are nowhere in the data. Growth funds infrastructure at least as plausibly as infrastructure causes growth. Critical determinants — commodity prices, terms of trade, political stability, education quality, climate shocks, global financial conditions — are absent from the feature set. WDI figures are modelled estimates carrying non-trivial error in low-capacity statistical systems. And one pooled model imposes homogeneous relationships across 52 very different economies.
 
-Moving a slider from 70% to 80% electricity access asks the model a specific question: what does it predict for a country-year profiled at 80%? The real world does not hold everything else constant while one indicator moves. That is a conditional prediction, not a counterfactual.
+Moving a slider from 70% to 80% electricity access asks the model one narrow question: what does it predict for a country that looks like this? It does **not** answer what would happen if a country actually built that capacity. In reality nothing else stays still while electricity access rises — incomes, urbanisation and institutions all move with it. The slider shows a different country profile, not the consequences of a policy.
 
 Establishing policy effects requires different tools: natural experiments and instrumental variables, difference-in-differences on policy rollouts, structural causal models with explicit DAGs, randomised trials where feasible, or synthetic control methods.
 
@@ -447,15 +493,25 @@ Establishing policy effects requires different tools: natural experiments and in
 
 ## 12. Conclusion
 
-**What was built.** An end-to-end, leakage-controlled ML decision-support system: WDI ingestion with an explicit duplicate policy, coverage-gated feature engineering, temporal splits with explicit feature-and-target-year accounting, expanding-window hyperparameter tuning, a validation baseline gate, a single-read test protocol, provenance-stamped artifacts, an artifact-driven Streamlit application with training-window guardrails, executed notebooks, and a test suite of 86 tests that regression-guards the selection protocol itself.
+**What was built.** A complete pipeline from raw data to a working application, with controls at each step to keep future information out of past decisions:
 
-**What the model achieved.** The strongest configuration found under a pre-registered search reaches test MAE **1.82** against **1.90** for the global-mean baseline, with a paired 95% CI of **[−0.04, +0.19]** on the improvement. Because that interval includes zero, the conclusion is that these 14 WDI indicators carry no statistically significant information about next-year GDP per capita growth beyond the unconditional mean.
+- WDI ingestion with an explicit policy for duplicate records
+- Feature selection gated on training-period coverage
+- Time-ordered splits, with feature years and target years tracked separately
+- Hyperparameter tuning on expanding windows inside the training period
+- A gate that blocks any model failing to beat the simple baselines
+- A test set opened exactly once
+- Artifacts stamped with their data fingerprint, git commit and library versions
+- A Streamlit application that reads those artifacts and warns on out-of-range inputs
+- Executed notebooks and 86 tests, several of which exist purely to catch the selection process cheating
+
+**What the model achieved.** The best configuration found misses actual growth by **1.82** percentage points on average, against **1.90** for the rule "always predict the historical average". Resampling the test set 5,000 times puts that 0.07-point lead anywhere between 0.04 *behind* and 0.19 ahead. Because the range includes losing, the lead cannot be called real: knowing these 14 indicators does not help predict next year's growth beyond guessing the average.
 
 **Why that counts as a result.** A null produced by a protocol that *could* have found an effect — and that, in an earlier and weaker form, was fooled into claiming one — is a genuine finding. It tells the reader that annual-frequency country-level WDI aggregates are too coarse and slow-moving for short-run growth forecasting, and it specifies what a serious next attempt would need: higher-frequency data, event-aware features, and per-country structure.
 
 **How the application supports decisions.** By making the model's limits the first thing a user sees: the significance verdict, majority-rate-aware directional metrics, CI-gated importance, training-window extrapolation warnings, and scenario deltas labelled as model responses.
 
-**Main limitations.** Temporal generalisation only; n=150 test observations; a COVID regime break adjacent to the test window; 52-of-54 country coverage; median imputation; multiple-comparison exposure from the CV grid.
+**Main limitations.** The model is only tested on future years for countries it already knows, not on new countries. The test set is small at 150 observations. COVID sits immediately before the test window. The panel covers 52 of 54 countries. Gaps are filled with median values. And because 12 configurations were compared, some of the apparent margin at selection time is chance.
 
 **Future work.** Re-ingest WDI at the full 54-country list. Add higher-frequency indicators and event features such as commodity prices and political-instability indices. Ship prediction intervals in the application. Benchmark against a hierarchical or panel-econometric model — an AR panel with country fixed effects shrinking toward the mean is the obvious next competitor, and notably the tuned HGB essentially rediscovers that solution. Consider per-subregion models.
 
@@ -463,13 +519,13 @@ Establishing policy effects requires different tools: natural experiments and in
 
 ## 13. Threats to Validity
 
-1. **Temporal generalisation only.** Countries are shared across splits, so this estimates "next years for known countries", not performance on unseen countries.
-2. **Small test set.** At n=150 the confidence interval on the headline comparison is wide. A true 0.07 pp advantage cannot be resolved at this sample size — and neither can it be ruled out beyond the stated interval.
-3. **Regime break.** Validation and test target regimes differ, COVID crash against post-pandemic recovery. The pre-registered refit policy addresses this, but a longer post-COVID window would be cleaner.
-4. **Multiple comparisons.** Twelve CV configurations across two families were compared on validation, which inflates validation margins slightly. The paired bootstrap CI on the test metric is the number leaned on, and it spans zero.
-5. **Median imputation** erases country-level missingness structure, and missingness is itself informative — conflict-affected states report less.
-6. **Coverage gap.** The committed panel lacks Mauritius and Sudan. Conclusions are unchanged by construction because they are null, but the next re-ingestion should re-verify.
-7. **WDI vintage instability.** Indicator definitions and historical values are revised over time. The panel is pinned by SHA-256, which guarantees *this* analysis is reproducible, not that a future download will match.
+1. **Only tested on new years, not new countries.** Every country appears in all three splits, so these results say how well the model handles future years for countries it has already seen. Performance on a country absent from training is untested.
+2. **The test set is small.** With 150 observations the range around the headline comparison is wide. A genuine 0.07-point advantage could not be detected at this sample size — but equally, an advantage larger than 0.19 can be ruled out.
+3. **COVID sits next to the test window.** Validation covers the crash, test covers the recovery. The refit policy was chosen in advance to handle this, but a longer post-pandemic window would settle it more cleanly.
+4. **Twelve configurations were compared.** Try enough options and one wins on validation by luck alone, which is why the validation margin is treated as soft evidence. The test-set comparison is the number relied on, and it includes zero.
+5. **Filling gaps with median values discards information.** Which countries fail to report is not random — conflict-affected states report less — so the gaps themselves carry meaning that median filling erases.
+6. **Two countries are missing.** The panel lacks Mauritius and Sudan. Since the finding is negative, adding two countries is unlikely to overturn it, but the next data refresh should confirm that.
+7. **The World Bank revises its data.** Definitions and historical values change between releases. The exact dataset used here is fingerprinted so this analysis can be reproduced, but a fresh download may not match it.
 
 ---
 

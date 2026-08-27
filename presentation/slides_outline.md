@@ -33,11 +33,11 @@ The brief names six items. Each maps to a numbered slide:
 
 **Question:** can recent development indicators predict near-term growth?
 
-**Answer, established under a pre-registered protocol:** no — not significantly beyond the unconditional mean. The contribution is a pipeline rigorous enough to establish that rather than hide it.
+**Answer:** no. The model does no better than guessing the historical average. The contribution is a pipeline rigorous enough to establish that rather than hide it.
 
 **Presenter:** [Your Name] · **Date:** [Date] · **Program:** AnalystLab Data Science Internship Capstone
 
-> **Say:** "I'll give you the conclusion first, because it shapes everything after it. The model reaches parity with predicting the average, and I can show you why that's the correct answer rather than a failed one."
+> **Say:** "I'll give you the conclusion first, because it shapes everything after it. The model does no better than guessing the average — and I can show you why that's the correct answer rather than a failed one."
 
 ---
 
@@ -135,14 +135,19 @@ Global mean · persistence · country historical mean (expanding, no future data
 *(Persistence scored on its fair-comparison subset — report §7.)*
 
 ### The number that decides the story
-> **Paired bootstrap vs global mean: +0.07 pp, 95% CI [−0.04, +0.19].**
-> The interval contains zero. The model is at statistical parity with predicting the average. That is the finding.
+> **The model beats the predict-the-average rule by 0.07 percentage points.**
+> **Resample the 150-row test set 5,000 times and that margin runs from 0.04 *worse* to 0.19 better.**
+> **A range that includes losing means the lead is not real. The two perform the same. That is the finding.**
+
+> **Say:** "The model wins by seven hundredths of a point. But there are only 150 rows in the test set, so I resampled it five thousand times to see how stable that is. On a good number of those resamples the model actually loses. When your margin includes losing, you don't have a margin — you have noise."
 
 ### Validation, where selection actually happened
 Ridge 4.00 · HGB **3.89** · global-mean baseline 4.04 — gate passed by 3.7%, which is inside noise at n=150. The null shows up here too.
 
 ### Reading directional accuracy honestly
-80.7% of test targets are non-negative, so any always-positive constant scores 80.7% by construction. Accuracy without the majority rate is a class prior, not skill. Reported alongside: **skill 0.0 pp, balanced accuracy 51.3%.**
+The model calls the direction of growth right 80.7% of the time. But growth was positive in 80.7% of test years — so always saying "up", using no data at all, scores exactly the same. The gap between the model and that trivial rule is **zero**. Scoring up-years and down-years separately and averaging gives **51.3%**, a coin flip.
+
+> **Say:** "If I put 80.7% on a slide with no context, it looks like the strongest number in the deck. It's the weakest. It's just how often growth happened to be positive."
 
 > **Say:** "R² is +0.03. That is not a model that explains growth — it's a model that has correctly learned to predict the mean and stop."
 
@@ -156,7 +161,7 @@ Permutation importance on validation, with 95% CIs:
 - Population growth **0.017** [0.000, 0.037]
 - The other twelve — including electricity and inflation — have intervals crossing zero
 
-Scale check: the larger effect is 0.046 MAE-degradation units against a validation MAE near 3.9. About one percent. Detectable, negligible.
+Scale check: scrambling the strongest indicator worsens predictions by 0.046, against typical errors near 3.9 — about one percent. Real, but too small to act on.
 
 ### 2. Importance is magnitude-only
 No positive/negative driver column. Permutation importance measures degradation from scrambling and carries no sign. An earlier draft had that column; it was a category error and was removed.
@@ -235,7 +240,7 @@ The same dataset previously produced a "working" model that was in fact worse th
 ## Q&A talking points *(not counted in runtime)*
 
 - **Why HGB over Ridge?** CV-best HGB beat CV-best Ridge on validation MAE, 3.89 vs 4.00, and cleared the gate.
-- **Is parity a failure?** No. It is a quantified, tested statement about predictability, produced by a protocol with no way to fake it.
+- **Is tying with the baseline a failure?** No. It is a measured, tested statement about what this data can and cannot predict, produced by a process with no way to fake a result.
 - **Why did early stopping matter?** The previous cycle overfit because sklearn's `early_stopping="auto"` is inert below 10,000 samples and n=905. Explicit `True` bounds it — the deployed model runs 45 of 200 iterations.
 - **Why pre-register the refit?** Validation contains the COVID crash. Refitting across it biases test predictions: MAE 2.03 and −0.86 pp bias, versus 1.82 and +0.08 pp for train-only.
 - **Why not tune harder?** Test-set fishing is exactly how the previous cycle shipped a bad model. The grid is compact, pre-registered, and scored only inside training years.
