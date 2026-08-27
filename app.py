@@ -199,7 +199,13 @@ def get_scenario_features(metadata: Dict, config_features: List[Dict]) -> List[s
     available_features = set(metadata["feature_names"])
     scenario_features = [f for f in priority_codes if f in available_features]
 
-    # Ensure we have at least 3, at most 5
+    # Ensure we have at least 3, at most 5 (pad with other available features)
+    if len(scenario_features) < 3:
+        for f in metadata["feature_names"]:
+            if f not in scenario_features:
+                scenario_features.append(f)
+            if len(scenario_features) >= 3:
+                break
     return scenario_features[:5]
 
 
