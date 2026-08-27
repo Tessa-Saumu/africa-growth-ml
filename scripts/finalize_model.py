@@ -142,10 +142,22 @@ def main(
     feature_cols = [c for c in panel.columns if c not in
                     ["iso3", "country_name", "year", "target_next_year"]]
     train_mask = panel["year"] <= config.train_end
+    train_cov = panel[train_mask]
     panel = select_features_by_coverage(panel, feature_cols, min_coverage=0.6,
                                         train_mask=train_mask)
     final_features = [c for c in panel.columns if c not in
                       ["iso3", "country_name", "year", "target_next_year"]]
+    # Record the coverage-filter outcome in metadata so documents can cite it.
+    dropped_coverage = {
+        c: round(float(100 * train_cov[c].notna().mean()), 1)
+        for c in feature_cols if c not in final_features
+    }
+    feature_selection = {
+        "candidates": len(feature_cols),
+        "kept": len(final_features),
+        "dropped": dropped_coverage,
+        "min_coverage_pct": 60.0,
+    }
     log_features = [f for f in config.log_transform_candidates if f in final_features]
 
     # ---------------- Step B: split + B10 fair-comparison filter -------------
@@ -404,6 +416,7 @@ def main(
         gate=gate,
         significance=significance,
         sensitivity=sensitivity,
+        extras={"feature_selection": feature_selection},
     )
 
     country_meta = panel[["iso3", "country_name"]].drop_duplicates().sort_values("iso3")

@@ -495,6 +495,7 @@ def write_model_metadata(
     gate: Optional[Dict[str, Any]] = None,
     significance: Optional[Dict[str, Any]] = None,
     sensitivity: Optional[Dict[str, Any]] = None,
+    extras: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Write model metadata JSON with feature contract, metrics, and provenance.
 
@@ -524,6 +525,7 @@ def write_model_metadata(
         gate: Baseline-gate report from enforce_baseline_gate.
         significance: Paired bootstrap significance block.
         sensitivity: Sensitivity-analysis block (e.g. refit variants).
+        extras: Additional top-level metadata keys (e.g. feature_selection).
     """
     metadata = {
         "target_code": target_code,
@@ -558,6 +560,8 @@ def write_model_metadata(
         "significance": significance,
         "sensitivity": sensitivity,
     }
+    if extras:
+        metadata.update(extras)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2)

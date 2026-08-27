@@ -3,4 +3,5 @@ pytest>=7.0
 jupyter>=1.0
 nbconvert>=7.0
 nbformat>=5.9
+fpdf2>=2.7
 ipykernel>=6.0

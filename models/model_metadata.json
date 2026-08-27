@@ -112,8 +112,8 @@
       "balanced_directional_accuracy": 0.5131091479053862
     }
   },
-  "created_utc": "2026-08-27T02:45:37+00:00",
-  "git_commit": "0b0d91089c67538dd47a7126ae5ec7b2b1b138ca",
+  "created_utc": "2026-08-27T02:54:17+00:00",
+  "git_commit": "cc78b7fbd4c3fafbad715c7f6e860b3fc8134f06",
   "library_versions": {
     "python": "3.11.2",
     "scikit_learn": "1.9.0",
@@ -192,5 +192,11 @@
       "mean_actual": 1.873471622472515,
       "bias_note": "train+val refit absorbs the 2020 COVID crash (validation target mean is far below test target mean), depressing central tendency on test - the C6 mechanism"
     }
+  },
+  "feature_selection": {
+    "candidates": 14,
+    "kept": 14,
+    "dropped": {},
+    "min_coverage_pct": 60.0
   }
 }
