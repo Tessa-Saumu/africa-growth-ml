@@ -31,3 +31,6 @@ Thumbs.db
 
 # Environment
 .env
+
+# Review scratch (pre-remediation artifact snapshots)
+.artifacts_pre/
