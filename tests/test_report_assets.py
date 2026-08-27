@@ -63,11 +63,21 @@ def test_no_fabricated_worst_error_countries(metrics):
     """C3: report claimed Libya +35pp etc. Worst-error names must be real."""
     real = {r["country_name"] for r in metrics["worst_errors"][:10]}
     report = Path("reports/capstone_report.md").read_text(encoding="utf-8")
-    m = re.search(r"### Worst Errors.*?(?=\n##)", report, re.S)
-    if not m:
-        pytest.skip("No worst-errors section")
-    for claimed in re.findall(r"\*\*?([A-Z][a-zA-Z ]+?)\s+20\d{2}", m.group(0)):
-        assert claimed.strip() in real, f"'{claimed}' is not in the real top-10"
+    m = re.search(r"###\s+Worst\s+errors.*?(?=\n##)", report, re.S | re.I)
+    assert m, ("No worst-errors section found in the report. This guard must "
+               "not silently skip: if the section is renamed, update the "
+               "pattern rather than losing the check.")
+    section = m.group(0)
+
+    # Prose form: '**Libya 2021**: actual ...'
+    claimed = set(re.findall(r"\*\*?([A-Z][a-zA-Z ]+?)\s+20\d{2}", section))
+    # Table form: '| Libya | 2021 | ...'
+    claimed |= {c.strip() for c in
+                re.findall(r"^\|\s*([A-Z][a-zA-Z ]+?)\s*\|\s*20\d{2}\s*\|",
+                           section, re.M)}
+    assert claimed, "Worst-errors section lists no country-year rows"
+    for name in claimed:
+        assert name.strip() in real, f"'{name}' is not in the real top-10"
 
 
 def test_report_never_restores_overturned_claims():

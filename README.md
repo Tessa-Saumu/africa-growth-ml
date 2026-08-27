@@ -1,63 +1,70 @@
 # Africa Growth Explorer
 
-**A Machine Learning Decision-Support System Using World Bank Development Indicators**
+**A machine learning decision-support system built on World Bank Development Indicators**
 
 Predicting near-term GDP per capita growth across African countries — and reporting honestly when the data says it can't.
 
 ![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)
 
-> **Headline result (verified, not sold):** the deployed model reaches test
-> MAE **1.82** against **1.90** for a predict-the-mean baseline. The paired
-> 95% CI on that improvement, [−0.04, +0.19], **includes zero** — the 14 WDI
-> indicators evaluated here carry no statistically significant information
-> about next-year growth beyond the unconditional mean. The project's value is
-> the leakage-free protocol that established this (and the gate that makes a
-> worse-than-constant model unshippable), demonstrated on a task where an
-> earlier cycle *did* manage to fool itself.
+> **Headline result.** The deployed model reaches test MAE **1.82** against
+> **1.90** for a predict-the-mean baseline. The paired 95% CI on that
+> improvement is **[−0.04, +0.19]**, which includes zero. These 14 WDI
+> indicators carry no statistically significant information about next-year
+> growth beyond the unconditional mean.
+>
+> That is the finding, not a disclaimer attached to one. What this project
+> delivers is the protocol that established it: leakage controls, a baseline
+> gate that makes a worse-than-constant model unshippable, and a single-read
+> test discipline. An earlier iteration of this same project, without that
+> machinery, convinced itself it had found signal.
 
 ---
 
-## Project Overview
+## What this is
 
-### Core Question
-> To what extent can recent development indicators predict near-term GDP per capita growth across African countries, and which observed development conditions are most informative for those predictions?
+**Core question.** To what extent can recent development indicators predict near-term GDP per capita growth across African countries, and which indicators are most informative?
 
-### Decision-Support Question
-> Given a country's current development profile, what level of next-year GDP per capita growth does the model estimate, which indicators move that estimate, and how does the estimate change under alternative scenarios?
+**Decision-support question.** Given a country's current profile, what growth does the model estimate, which indicators move that estimate, and how does it change under alternative scenarios?
 
-### Intended Users
-Development analysts, economic researchers, policy analysts, government planning teams, NGOs, and students comparing development conditions across African countries.
+**Users.** Development analysts, economic researchers, policy teams, NGOs, students.
 
-> **This tool is for screening and analytical support, not final policy decisions.** Combine model output with expert knowledge and country-specific evidence.
+> This is a screening and analysis tool, not a basis for final policy decisions. Combine its output with country-specific expertise.
 
 ---
 
 ## Data
 
-**World Bank World Development Indicators (WDI)**
-- Source: [datatopics.worldbank.org/world-development-indicators](https://datatopics.worldbank.org/world-development-indicators/) (`WDI_CSV.zip`, not committed — download instructions in [`data/README.md`](data/README.md))
-- 14 candidate indicators across 6 themes (plus current-year growth carried as a feature)
-- Country list: all **54 UN African member states + Western Sahara (ESH)** in `config/indicators.yaml`; the committed panel currently covers **52** — Mauritius and Sudan arrive on the next WDI re-ingestion (documented in `data/README.md`)
-- Time range: 2000–2024; processed panel 1,300 country-year rows, SHA-256 pinned in model metadata
+**World Bank World Development Indicators**
 
-### Target Definition
-- **Target:** GDP per capita growth (annual %) in year *t+1* — `NY.GDP.PCAP.KD.ZG`, created by `groupby("iso3").shift(-1)`
-- **Splits (feature years → target years):** train 2000–2017 → 2001–2018 · val 2018–2020 → **2019–2021** (includes the COVID target year) · test 2021–2023 → **2022–2024**
+- Source: [datatopics.worldbank.org/world-development-indicators](https://datatopics.worldbank.org/world-development-indicators/) — `WDI_CSV.zip`, not committed; download instructions in [`data/README.md`](data/README.md)
+- 14 candidate indicators across 6 themes, plus current-year growth carried as a feature
+- Country list: all **54 UN African member states plus Western Sahara** in `config/indicators.yaml`. The committed panel covers **52** — Mauritius and Sudan arrive with the next re-ingestion, documented in `data/README.md` and marked `xfail` in the test suite rather than papered over
+- 2000–2024; 1,300 country-year rows; panel SHA-256 pinned in model metadata
+
+**Target.** GDP per capita growth (annual %) at year *t+1* — `NY.GDP.PCAP.KD.ZG`, built with `groupby("iso3").shift(-1)`.
+
+**Splits**, stated as feature years → target years, because the distinction matters:
+
+| split | feature years | target years | n |
+|---|---|---|---|
+| train | 2000–2017 | 2001–2018 | 905 |
+| validation | 2018–2020 | 2019–2021 *(contains COVID)* | 150 |
+| test | 2021–2023 | 2022–2024 *(sealed)* | 150 |
 
 ---
 
-## Model & Protocol
+## Model and protocol
 
-**HistGradientBoostingRegressor** (selected by expanding-window CV inside the training period, gated against validation baselines, refit on train only under a *pre-registered* policy):
+**HistGradientBoostingRegressor**, selected by expanding-window CV inside the training period, gated against validation baselines, refit on training data only under a pre-registered policy.
 
-- `SimpleImputer(median) → HGB(max_depth=2, lr=0.03, max_iter≤200, l2=1.0, early_stopping=True)` — early stopping is explicit because sklearn's `"auto"` is inert below 10k samples
-- Expanding-window CV grid (spec §9): folds train 2000–2010→val 2011–12, 2000–2012→2013–14, 2000–2014→2015–16; Ridge α over {1…3000}, HGB over depth×lr×iter
-- **Baseline gate:** artifacts are only written if the winner beats the global-mean and persistence baselines **on validation** (`enforce_baseline_gate`; failure exits non-zero)
-- **Test set is read exactly once** (`scripts/finalize_model.py`, Step H); notebooks load frozen results and never select
+- `SimpleImputer(median) → HGB(max_depth=2, lr=0.03, max_iter≤200, l2=1.0, early_stopping=True)`. Early stopping is set explicitly because sklearn's `"auto"` silently disables itself below 10,000 samples — at n=905 that left an earlier model running all 1,000 rounds unchecked. The deployed model stops at 45 of 200
+- **Expanding-window CV:** folds train 2000–2010 → val 2011–12, 2000–2012 → 2013–14, 2000–2014 → 2015–16. Ridge α over {1…3000}; HGB over depth × learning rate × iterations
+- **Baseline gate:** artifacts are written only if the winner beats the global-mean and persistence baselines **on validation**. Failure exits non-zero and writes nothing
+- **The test set is read exactly once**, in `scripts/finalize_model.py`. Notebooks load frozen results and never re-select
 
-### Results (generated from committed artifacts)
+### Results
 
-`reports/generated/` is produced by `scripts/build_report_assets.py`; no number below is hand-typed, and `tests/test_report_assets.py` fails if documents drift.
+Generated by `scripts/build_report_assets.py` into `reports/generated/`. No number below is hand-typed, and `tests/test_report_assets.py` fails the build if any document drifts from the artifacts.
 
 | Model | Split | MAE | RMSE | R² | Dir. acc | Majority rate | Dir. skill |
 |---|---|---|---|---|---|---|---|
@@ -69,148 +76,147 @@ Development analysts, economic researchers, policy analysts, government planning
 | Ridge (CV-best) | validation | 4.00 | 6.08 | -0.16 | 0.51 | 0.51 | 0.00 |
 | Global mean baseline | validation | 4.04 | 6.14 | -0.18 | 0.51 | 0.51 | 0.00 |
 
-**Statistical significance:** paired bootstrap over test residuals (5,000 resamples, seed 42): improvement vs the global-mean baseline = **+0.07 pp, 95% CI [−0.04, +0.19] — not significant.** The model is statistically indistinguishable from predicting the unconditional mean.
+**Significance.** Paired bootstrap over test residuals, 5,000 resamples, seed 42: improvement over the global-mean baseline is **+0.07 pp, 95% CI [−0.04, +0.19] — not significant**. The model is statistically indistinguishable from predicting the unconditional mean.
 
-**Directional accuracy requires the majority-class rate:** 80.7% of test targets are non-negative, so *any* always-positive predictor scores 80.7%. The deployed model's directional skill is 0.00 pp and balanced directional accuracy is 51.3% — no sign information beyond the class prior.
+**Directional accuracy is meaningless without the majority-class rate.** 80.7% of test targets are non-negative, so the majority rate is 80.7% and any always-positive predictor matches it by construction. The deployed model's directional skill is 0.00 pp and its balanced accuracy 51.3% — no sign information beyond the class prior. This is why the raw figure never appears alone in this repository.
 
-### What Drives Predictions (honest attribution)
-Permutation importance on validation, with 95% CIs: **2 of 14 features are distinguishable from zero** — GDP per capita (0.046 [0.018, 0.085]) and population growth (0.017 [0.000, 0.037]); the other 12 straddle zero and are reported as noise. Permutation importance has **no directional meaning** — no "positive/negative driver" claims are made from it. Direction comes only from standardized Ridge coefficients (association, not causation); all |coefficients| are ≤ 0.14 at the CV-selected α=3000, itself a sign of weak linear signal.
-
----
-
-## Streamlit Application
-
-### 4 Pages
-1. **Project Overview** — problem, data, model, honest headline metrics, causal disclaimer
-2. **Explore Africa** — country trends, indicator charts, regional comparison table
-3. **Model Performance** — significance banner, baseline comparison (test + validation), actual-vs-predicted, residuals, CI-gated feature importance with noise table, Ridge-direction panel, by-year metrics
-4. **Scenario Explorer** — interactive what-if analysis, **training-window** extrapolation guardrails, one-at-a-time model-delta table (no fake "importance × change" arithmetic)
-
-The app loads serialized artifacts only (pipeline, frozen predictions, importance) — it never retrains and makes no network calls.
+**Attribution.** Permutation importance on validation with 95% CIs: **2 of 14 features exclude zero** — GDP per capita (0.046 [0.018, 0.085]) and population growth (0.017 [0.000, 0.037]). The other 12 straddle zero and are reported as noise. Permutation importance carries no sign, so no positive/negative driver claims are made from it. Direction comes only from standardised Ridge coefficients, as association rather than causation, and all |coefficients| are ≤0.14 at the CV-selected α=3000 — itself a signal of weak linear structure.
 
 ---
 
-## Quick Start
+## Application
+
+Four Streamlit pages, loading committed artifacts only. No retraining, no network calls.
+
+1. **Project Overview** — problem, data, model card, headline metrics with the significance verdict, causal disclaimer
+2. **Explore Africa** — country trends, indicator charts, regional comparison
+3. **Model Performance** — significance banner, test and validation baselines, actual-vs-predicted, residuals, CI-gated importance with a noise table, Ridge direction panel, per-year metrics
+4. **Scenario Explorer** — what-if analysis with training-window guardrails and one-at-a-time model deltas, not fabricated "importance × change" arithmetic
+
+---
+
+## Quick start
 
 ```bash
 python3.11 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-pip install -e ".[dev]"          # dev extras: notebooks/tests
+pip install -e ".[dev]"          # notebooks and tests
 ```
 
-### Run the App (model artifacts are committed — no training required)
+**Run the app** — artifacts are committed, so no training is required:
+
 ```bash
 streamlit run app.py             # http://localhost:8501
 ```
 
-### Reproduce the Full Pipeline
+**Reproduce the pipeline:**
+
 ```bash
-# 1. Download WDI_CSV.zip from the World Bank into data/raw/ (see data/README.md)
-# 2. Build the country-year panel
-python -m src.data
+# 1. Download WDI_CSV.zip into data/raw/ (see data/README.md)
+python -m src.data                       # build the country-year panel
 python -m src.features
 
-# 3. Select, gate, and finalize the model (writes models/*)
+# 2. Select, gate, and finalize (writes models/*)
 python scripts/finalize_model.py
 
-# 4. Regenerate report assets + the PDF report from the artifacts
+# 3. Regenerate every document number, then the PDF
 python scripts/build_report_assets.py
 python scripts/build_report_pdf.py       # reports/capstone_report.pdf
 
-# 5. Run the test suite / re-execute notebooks (dev extras)
+# 4. Tests and notebooks
 pytest -q
 jupyter nbconvert --to notebook --execute --inplace notebooks/01_data_profiling.ipynb
 jupyter nbconvert --to notebook --execute --inplace notebooks/02_model_evaluation.ipynb
-```
-
-### Run Tests
-```bash
-pytest tests/ -q                 # runtime deps: requirements.txt; test deps: requirements-dev.txt
 ```
 
 ---
 
 ## Reproducibility
 
-- `random_state=42` everywhere; the finalize script is bit-level deterministic (verified: double-run `model_metadata.json` comparison of winner-test metrics)
-- Provenance in `models/model_metadata.json`: `created_utc`, `git_commit`, `library_versions`, `panel_sha256`, split sizes, **split target-year windows** (feature-vs-target-year ambiguity is spelled out), `refit_strategy`, gate + significance + sensitivity blocks, feature-selection audit trail
-- Notebooks resolve the project portably (`PROJECT_ROOT` env var → nearest `pyproject.toml`) and execute cleanly via `jupyter nbconvert` against the registered `africa-growth-ml` kernel
+- `random_state=42` throughout. `finalize_model.py` is bit-deterministic: two independent runs produce `model_metadata.json` files differing only in timestamp and git commit, and identical numeric artifacts
+- Provenance in `models/model_metadata.json`: `created_utc`, `git_commit`, `library_versions`, `panel_sha256`, split sizes, **split target-year windows**, `refit_strategy`, and the gate, significance, sensitivity and feature-selection blocks
+- Notebooks resolve their root portably (`PROJECT_ROOT` env var, then nearest `pyproject.toml`) and execute cleanly under `jupyter nbconvert`
+
+**Verifying the test set is really sealed.** Corrupt the test-period outcomes and re-run `scripts/finalize_model.py`: CV results, the selected winner and the gate outcome stay bit-identical while test MAE moves from 1.82 to 51.40. Selection cannot see the test set. `tests/test_finalize_model.py` encodes this as a regression guard.
 
 ---
 
-## Project Structure
+## Repository layout
 
 ```
 africa-growth-ml/
 ├── app.py                      # Streamlit application (entry point)
 ├── config/indicators.yaml      # Indicators, countries, splits, CV grid
 ├── data/
-│   ├── README.md               # Download instructions + known data limitations
+│   ├── README.md               # Download instructions + known limitations
 │   └── processed/              # Committed panel + country metadata
-├── models/                     # Committed artifacts: pipeline, metadata,
-│   ├── growth_model.joblib     #   frozen test predictions, importance,
-│   ├── model_metadata.json     #   coefficients, CV results
-│   └── ...
-├── notebooks/                  # Executed, artifact-driven (no logic)
-├── figures/                  # all PNG figures (notebooks + report assets)
+├── figures/                    # All PNG figures (notebooks + report assets)
+├── models/                     # Pipeline, metadata, frozen predictions,
+│                               #   importance, coefficients, CV results
+├── notebooks/                  # Executed, artifact-driven (no selection logic)
 ├── reports/
-│   ├── capstone_report.md      # Final report (numbers pasted from generated/)
-│   └── generated/              # metrics.json + tables (generated)
+│   ├── capstone_report.md      # Final report
+│   ├── capstone_report.pdf     # PDF deliverable
+│   └── generated/              # metrics.json + tables (generated, not typed)
+├── presentation/               # Slide outline and demo script
 ├── scripts/
 │   ├── finalize_model.py       # Selection → gate → sealed test → artifacts
-│   └── build_report_assets.py  # All document numbers, from artifacts
+│   ├── build_report_assets.py  # Every document number, from artifacts
+│   └── build_report_pdf.py     # Markdown → PDF with embedded figures
 ├── src/                        # config, data, features, train, evaluate, visualization
-└── tests/                      # 60+ tests incl. finalize/app regression guards
+└── tests/                      # 86 tests, incl. finalize/app regression guards
 ```
 
 ---
 
 ## Deployment
 
-**Status:** verified locally (app boots headless, HTTP 200, scenario prediction and extrapolation warnings exercised); a public Streamlit Cloud instance is **not included in this submission** — the repository is deployment-ready (entry point `app.py`, committed artifacts, `requirements.txt`, Python 3.11) and the steps below are the verified path.
+**Status:** verified locally — the app boots headless, returns HTTP 200, and scenario prediction and extrapolation warnings have been exercised end to end. A public Streamlit Cloud instance is **not part of this submission**. The repository is deployment-ready and the steps below are the verified path.
 
-1. Push this repository to GitHub
-2. Connect it to [Streamlit Cloud](https://share.streamlit.io), entry point `app.py`, Python 3.11
-3. No secrets or data downloads needed — all runtime artifacts are committed
+1. Push to GitHub
+2. Connect at [Streamlit Cloud](https://share.streamlit.io), entry point `app.py`, Python 3.11
+3. No secrets and no downloads — all runtime artifacts are committed
 
-### Deployment Checklist
+**Checklist**
+
 - [x] `app.py` at repository root
-- [x] All imports resolve from repo root; package installable (`pip install -e .` exposes `src.*`)
-- [x] Model files committed (not gitignored)
-- [x] `requirements.txt` installs cleanly (no test tooling in runtime deps)
-- [x] No local absolute paths (grep-verified incl. notebooks; enforced by `tests/test_hardcoded_paths.py`)
+- [x] Imports resolve from the repo root; `pip install -e .` exposes `src.*`
+- [x] Model artifacts committed, not gitignored
+- [x] `requirements.txt` installs cleanly, with no test tooling in runtime deps
+- [x] No absolute local paths, enforced by `tests/test_hardcoded_paths.py`
 - [x] No live API calls
 - [x] `@st.cache_resource` for the model, `@st.cache_data` for data
-- [x] `.streamlit/config.toml` free of `enableCORS`/`port` overrides
-- [ ] App screenshots — **not captured in this environment** (no browser
-      binary reachable); see `docs/screenshots/README.md` for why and for the
-      exact capture list to add after deployment
+- [x] `.streamlit/config.toml` free of `enableCORS` and `port` overrides
+- [ ] Screenshots — not captured here; no browser binary is reachable in this environment. See `docs/screenshots/README.md` for the capture list to add after deployment
 
 ---
 
-## Important Limitations
+## Limitations
 
-### Causal Interpretation Disclaimer
-> This application uses machine learning for **prediction and decision support**, not causal policy-effect estimation. The model identifies statistical associations between development indicators and future GDP per capita growth. It **cannot prove** that changing an indicator causes a change in growth. Scenario deltas are *conditional predictions*, not counterfactuals: the real world does not hold other factors constant when one slider moves. Establishing policy effects requires experimental or quasi-experimental designs (IV, DiD, RCTs, synthetic controls, explicit causal models).
+**Causal interpretation.** This system does prediction and decision support, not causal estimation. It identifies statistical associations between development indicators and future growth, and cannot show that changing an indicator causes growth to change. Scenario deltas are conditional predictions, not counterfactuals — the real world does not hold everything else fixed when one slider moves. Establishing policy effects needs experimental or quasi-experimental designs: instrumental variables, difference-in-differences, RCTs, synthetic controls, or explicit causal models.
 
-### Technical Limitations
-- **Parity, not victory:** the headline paired CI spans zero — treat point predictions as the mean plus noise
-- **Temporal generalization only:** future years for seen countries, not unseen countries
-- **COVID regime break:** validation target years include the 2020 crash; refit policy is pre-registered (`train_only`) and the train+val counterfactual is reported as sensitivity
-- **Small test set:** n=150; multiple-comparison exposure from the CV grid is discussed in report §13
-- **52-of-54 country coverage** in the committed panel (MUS/SDN pending WDI re-ingestion)
-- **Median imputation** ignores informative missingness
-- **Extrapolation risk:** scenario guardrails warn outside the *training* P1–P99 band, but no mechanism repairs unsupported regions
+**Technical**
+
+- **Parity, not victory.** The headline CI spans zero. Treat point predictions as the mean plus noise
+- **Temporal generalisation only** — future years for known countries, not unseen countries
+- **COVID regime break** sits adjacent to the test window. The refit policy is pre-registered as `train_only`; the train+val counterfactual is reported as sensitivity (test MAE 2.03, bias −0.86 pp)
+- **Small test set** at n=150, with multiple-comparison exposure from the CV grid discussed in report §13
+- **52-of-54 country coverage** in the committed panel
+- **Median imputation** ignores informative missingness, and missingness here is structural rather than random
+- **Extrapolation** is flagged outside the training P1–P99 band, but flagging is not repair
 
 ---
+
+## Documentation
+
+- **Full report:** [`reports/capstone_report.md`](reports/capstone_report.md) · [PDF](reports/capstone_report.pdf)
+- **Presentation:** [`presentation/slides_outline.md`](presentation/slides_outline.md)
+- **Data provenance and known gaps:** [`data/README.md`](data/README.md)
 
 ## License
 
-MIT License — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
 
 ## Acknowledgments
 
-- World Bank for the World Development Indicators
-- scikit-learn team for HistGradientBoostingRegressor
-- Streamlit team for the deployment platform
-- FlyRank internship program for project guidance
+World Bank for the World Development Indicators; the scikit-learn and Streamlit teams; and the AnalystLab internship programme for project guidance.
