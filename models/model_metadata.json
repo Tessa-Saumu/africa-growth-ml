@@ -1,0 +1,78 @@
+{
+  "target_code": "NY.GDP.PCAP.KD.ZG",
+  "target_name": "GDP per capita growth (annual %)",
+  "prediction_horizon_years": 1,
+  "geographic_scope": "African countries",
+  "feature_names": [
+    "BX.KLT.DINV.WD.GD.ZS",
+    "EG.ELC.ACCS.ZS",
+    "FP.CPI.TOTL.ZG",
+    "FS.AST.PRVT.GD.ZS",
+    "IT.NET.USER.ZS",
+    "NE.CON.GOVT.ZS",
+    "NE.GDI.TOTL.ZS",
+    "NE.TRD.GNFS.ZS",
+    "NY.GDP.PCAP.CD",
+    "NY.GDP.PCAP.KD.ZG",
+    "SL.UEM.TOTL.ZS",
+    "SP.DYN.LE00.IN",
+    "SP.POP.GROW",
+    "SP.URB.TOTL.IN.ZS"
+  ],
+  "n_features": 14,
+  "log_transform_features": [
+    "NY.GDP.PCAP.CD"
+  ],
+  "train_end": 2017,
+  "val_end": 2020,
+  "model_type": "HistGradientBoostingRegressor",
+  "random_state": 42,
+  "metrics": {
+    "global_mean_baseline": {
+      "mae": 1.8957656702015522,
+      "rmse": 2.8378577452867932,
+      "r2": -0.0005216261573597336,
+      "directional_accuracy": 0.8066666666666666
+    },
+    "persistence_baseline": {
+      "mae": 2.2286543903574296,
+      "rmse": 4.5209151510606445,
+      "r2": -1.5392060818412903,
+      "directional_accuracy": 0.7733333333333333
+    },
+    "ridge_val": {
+      "mae": 3.983305731821011,
+      "rmse": 5.9479377604083545,
+      "r2": -0.10448577879908316,
+      "directional_accuracy": 0.5666666666666667
+    },
+    "hgb_val": {
+      "mae": 3.9060632600885477,
+      "rmse": 5.941680643227411,
+      "r2": -0.10216320510886612,
+      "directional_accuracy": 0.58
+    },
+    "winner_test": {
+      "mae": 3.539652137963711,
+      "rmse": 4.998371252952487,
+      "r2": -2.1038609524852316,
+      "directional_accuracy": 0.5266666666666666
+    },
+    "feature_importance": {
+      "EG.ELC.ACCS.ZS": 0.6036480252880414,
+      "NY.GDP.PCAP.CD": 0.2216328459394028,
+      "SL.UEM.TOTL.ZS": 0.17661229535289075,
+      "FS.AST.PRVT.GD.ZS": 0.056487578866243206,
+      "NE.CON.GOVT.ZS": -0.05556458120857508,
+      "BX.KLT.DINV.WD.GD.ZS": -0.0778024228933785,
+      "NE.TRD.GNFS.ZS": -0.07960469908386099,
+      "NY.GDP.PCAP.KD.ZG": -0.08846827465425769,
+      "SP.URB.TOTL.IN.ZS": -0.093498666945972,
+      "IT.NET.USER.ZS": -0.1409187826683401,
+      "SP.DYN.LE00.IN": -0.15048509083844736,
+      "SP.POP.GROW": -0.15379006337901568,
+      "FP.CPI.TOTL.ZG": -0.1955145514738005,
+      "NE.GDI.TOTL.ZS": -0.21150560529453685
+    }
+  }
+}
