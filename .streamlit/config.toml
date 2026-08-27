@@ -1,0 +1,18 @@
+[theme]
+# Africa Growth Explorer - Project Visual Language
+# Colors from src/visualization.py PROJECT_PALETTE
+primaryColor = "#1B4F72"
+backgroundColor = "#F8F9FA"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#2C3E50"
+font = "sans serif"
+
+[server]
+# Streamlit Cloud deployment settings
+headless = true
+enableCORS = false
+enableXsrfProtection = true
+port = 8501
+
+[browser]
+gatherUsageStats = false
