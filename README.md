@@ -152,9 +152,10 @@ africa-growth-ml/
 │   ├── model_metadata.json     #   coefficients, CV results
 │   └── ...
 ├── notebooks/                  # Executed, artifact-driven (no logic)
+├── figures/                  # all PNG figures (notebooks + report assets)
 ├── reports/
 │   ├── capstone_report.md      # Final report (numbers pasted from generated/)
-│   └── generated/              # metrics.json + tables + figures (generated)
+│   └── generated/              # metrics.json + tables (generated)
 ├── scripts/
 │   ├── finalize_model.py       # Selection → gate → sealed test → artifacts
 │   └── build_report_assets.py  # All document numbers, from artifacts

@@ -207,7 +207,7 @@ Pairs the narrative previously quoted, now computed: electricity↔internet
 inflation↔growth **−0.09** (was −0.31, overstated 3.4×),
 capital-formation↔growth **0.10**.
 
-![Correlation heatmap](figures/correlation_heatmap.png)
+![Correlation heatmap](../figures/correlation_heatmap.png)
 
 ### Main EDA findings
 1. Development *levels* (electricity, internet, urbanization, life expectancy) are strongly collinear slow-moving variables — they carry level information, not year-on-year change.
@@ -274,7 +274,7 @@ The model achieves **parity** with the unconditional mean, not a demonstrated vi
 80.67% of test targets are ≥0, so **any** always-positive predictor — including the global-mean baseline — scores 80.67% directional accuracy by construction. Reported next to the majority-class rate, the deployed model's directional **skill is 0.00pp** and its balanced directional accuracy is 51.3%: no sign information beyond the class prior. Earlier drafts presented a raw directional accuracy *below* the majority rate as a strength; that framing is retracted.
 
 ### Fit quality (test set, n=150)
-- Actual-vs-predicted and residual plots: `figures/actual_vs_predicted.png`, `figures/residuals.png`
+- Actual-vs-predicted and residual plots: `figures/actual_vs_predicted.png` and `figures/residuals.png` at the repository root
 - **Mean residual (actual − predicted): +0.080 pp** — near-zero bias, as intended under the pre-registered train-only refit. (The previous deployed model carried a −2.07 pp systematic bias from refitting across the COVID regime; the sensitivity analysis below reproduces that mechanism honestly.)
 - Bootstrap 95% CIs (2,000 resamples, seed 42): **MAE [1.52, 2.18]**, **RMSE [2.16, 3.41]** — both intervals contain the corresponding global-mean baseline values.
 
@@ -342,7 +342,7 @@ narratives on top of them; that was doubly wrong — permutation importance
 carries no sign semantics (it measures *degradation from scrambling*), and the
 values are noise. Both errors are retracted here.
 
-![Feature importance (validation, CI-significant only)](figures/feature_importance.png)
+![Feature importance (validation, CI-significant only)](../figures/feature_importance.png)
 
 ### Direction: Ridge standardized coefficients (training fit; CV-best α=3000)
 

@@ -8,7 +8,7 @@ match the data. This script removes the possibility by construction — it loads
 
     reports/generated/metrics.json          every citable number
     reports/generated/table_*.md            ready-to-paste Markdown tables
-    reports/generated/figures/*.png         report figures
+    figures/*.png                            report figures (project figures folder)
 
 Documents may then quote ONLY values present in metrics.json / the generated
 tables (tests/test_report_assets.py enforces this for MAE figures and worst-
@@ -527,7 +527,7 @@ def main(root: Optional[Path] = None,
     root = Path(root) if root else Path.cwd()
     out_dir = Path(out_dir) if out_dir else root / "reports" / "generated"
     out_dir.mkdir(parents=True, exist_ok=True)
-    fig_dir = out_dir / "figures"
+    fig_dir = root / "figures"
 
     art = load_artifacts(root)
     art["model_path"] = root / "models/growth_model.joblib"

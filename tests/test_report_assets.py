@@ -118,5 +118,8 @@ def test_generated_tables_exist_and_nonempty(metrics):
         p = gen / name
         assert p.exists() and len(p.read_text(encoding="utf-8").splitlines()) > 2, name
     for fig in ["actual_vs_predicted.png", "residuals.png",
-                "feature_importance.png", "correlation_heatmap.png"]:
-        assert (gen / "figures" / fig).exists(), fig
+                "feature_importance.png", "correlation_heatmap.png",
+                "eda_missingness_heatmap.png", "eda_feature_distributions.png",
+                "eda_correlation_matrix.png", "modeling_actual_vs_predicted.png",
+                "modeling_residuals.png", "modeling_feature_importance.png"]:
+        assert (Path("figures") / fig).exists(), fig
