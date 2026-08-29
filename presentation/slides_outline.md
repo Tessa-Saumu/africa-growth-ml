@@ -181,7 +181,7 @@ The same dataset previously produced a "working" model that was in fact worse th
 
 ---
 
-## Slide 7: Live Demo — Streamlit App (110 seconds)
+## Slide 7: Live Demo — Streamlit App (110 seconds) — [https://africa-growth-ml.streamlit.app/](https://africa-growth-ml.streamlit.app/)
 
 **Page 1 — Overview:** the problem, the data, the model, the headline result with its caveat stated up front, and the reminder that none of this shows cause and effect.
 
@@ -235,7 +235,7 @@ The same dataset previously produced a "working" model that was in fact worse th
 3. **Generate every number in every document from the saved model**, so the write-up cannot drift from what was actually built.
 
 - **GitHub:** this repository — code, saved model, tests, executed notebooks, full report
-- **App:** verified locally via `streamlit run app.py`; no public URL in this submission (README → Deployment)
+- **App:** live at [https://africa-growth-ml.streamlit.app/](https://africa-growth-ml.streamlit.app/) (verified locally via `streamlit run app.py`)
 - **Report:** `reports/capstone_report.md`
 - **Contact:** [your email]
 

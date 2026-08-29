@@ -2,7 +2,9 @@
 
 **Can development indicators predict next year's economic growth in Africa? This project tests that carefully, and the answer is no.**
 
-![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)
+**Live app:** [https://africa-growth-ml.streamlit.app/](https://africa-growth-ml.streamlit.app/)
+
+[![Live App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://africa-growth-ml.streamlit.app/)
 
 > **The model is no better than guessing the average.**
 >
@@ -224,9 +226,20 @@ africa-growth-ml/
 
 ---
 
+## Screenshots
+
+Dashboard captures from the live deployed app (`assets/`):
+
+- `assets/project_overview.png` — Project Overview
+- `assets/explore_africa.png` — Explore Africa indicator trends
+- `assets/model_performance.png` — Model Performance by year
+- `assets/scenario_explorer.png` — Scenario Explorer adjustments
+
+---
+
 ## Deployment
 
-**Status:** verified locally. The app starts, serves, and its scenario predictions and range warnings have been exercised end to end. A public Streamlit Cloud instance is **not part of this submission**; the repository is ready to deploy and the steps below are the verified path.
+**Status:** live. The app is deployed at [https://africa-growth-ml.streamlit.app/](https://africa-growth-ml.streamlit.app/) and verified locally (starts, serves, predictions and range warnings exercised end to end).
 
 1. Push to GitHub
 2. Connect at [Streamlit Cloud](https://share.streamlit.io), entry point `app.py`
@@ -246,7 +259,7 @@ All four pages run with no backend: the app reads committed files (`models/growt
 - [x] No live API calls
 - [x] Model and data cached so they load once, not on every interaction
 - [x] Streamlit config free of settings that break cloud hosting
-- [ ] Screenshots — not captured here; no browser is reachable in this environment. See `docs/screenshots/README.md` for the shot list to add after deploying
+- [x] Screenshots — committed in `assets/` (live deploy at https://africa-growth-ml.streamlit.app/)
 
 ---
 

@@ -449,7 +449,7 @@ The model answers "what does this profile typically go with?", not "what would h
 
 ## 9. Decision-Support Application
 
-A four-page Streamlit application, loading committed artifacts only — no retraining, no network calls.
+A four-page Streamlit application, loading committed artifacts only — no retraining, no network calls. It is publicly deployed at [https://africa-growth-ml.streamlit.app/](https://africa-growth-ml.streamlit.app/). Dashboard screenshots from the live app are committed under `assets/`: `project_overview.png`, `explore_africa.png`, `model_performance.png`, `scenario_explorer.png`.
 
 1. **Project Overview** — problem, data, model card, headline metrics with the significance verdict, causal disclaimer
 2. **Explore Africa** — country growth trends, indicator charts, regional comparison
