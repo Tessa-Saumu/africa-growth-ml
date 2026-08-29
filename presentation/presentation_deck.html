@@ -1,0 +1,1531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Africa Growth Explorer - Presentation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    /* ===== TERRACOTTA EDITORIAL DESIGN TOKENS ===== */
+    :root {
+      --canvas:               #FCFAF7;
+      --surface:              #FFFFFF;
+      --surface-soft:         #F7F0EA;
+      --surface-warm:         #F4E4DA;
+      --ink:                  #241D19;
+      --ink-secondary:        #5E524B;
+      --muted:                #8B7D74;
+      --border:               #E7DDD5;
+      --border-strong:        #D7C9BF;
+      --terracotta:           #C65A35;
+      --terracotta-deep:      #A94325;
+      --terracotta-light:     #E8B39C;
+      --terracotta-tint:      #F4E4DA;
+      --plum:                 #59404A;
+      --rose:                 #B98278;
+      --sand:                 #D9B88C;
+      --positive:             #637A5A;
+      --warning:              #B57A32;
+      --critical:             #8C332B;
+
+      /* Compatibility aliases for existing markup */
+      --charcoal:             #FCFAF7;
+      --charcoal-light:       #FFFFFF;
+      --charcoal-mid:         #F7F0EA;
+      --steel:                #8B7D74;
+      --steel-light:          #5E524B;
+      --steel-dark:           #D7C9BF;
+      --ledger-white:         #241D19;
+      --ledger-white-dim:     #5E524B;
+      --register-green:       #C65A35;
+      --register-green-dim:   rgba(198,90,53,0.10);
+      --register-green-glow:  rgba(198,90,53,0.16);
+
+      --shadow-soft:          0 2px 10px rgba(36,29,25,0.04);
+      --shadow-elevated:      0 8px 24px rgba(36,29,25,0.07);
+    }
+
+    /* ===== RESET & BASE ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html {
+      scroll-behavior: smooth;
+      background: var(--canvas);
+    }
+
+    body {
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: 'DM Sans', Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      overflow-x: hidden;
+      line-height: 1.6;
+    }
+
+    /* Quiet paper texture, kept extremely subtle */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 9999;
+      opacity: 0.045;
+      background-image:
+        radial-gradient(rgba(36,29,25,0.16) 0.4px, transparent 0.4px);
+      background-size: 4px 4px;
+      mix-blend-mode: multiply;
+    }
+
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--canvas); }
+    ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+    ::selection {
+      background: var(--terracotta);
+      color: #FFFFFF;
+    }
+
+    /* ===== TYPOGRAPHY ===== */
+    h1, h2, h3, h4 {
+      font-family: 'Instrument Serif', Georgia, 'Times New Roman', serif;
+      line-height: 1.08;
+      font-weight: 400;
+      color: var(--ink);
+    }
+
+    code, pre {
+      font-family: 'JetBrains Mono', 'Courier New', monospace;
+    }
+
+    /* ===== ANIMATIONS ===== */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.45; }
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(22px);
+      transition:
+        opacity 0.75s cubic-bezier(0.22,1,0.36,1),
+        transform 0.75s cubic-bezier(0.22,1,0.36,1);
+    }
+
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* ===== LAYOUT ===== */
+    .slide {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 96px 0;
+      position: relative;
+      border-bottom: 1px solid var(--border);
+      background:
+        radial-gradient(circle at 88% 12%, rgba(198,90,53,0.045), transparent 30%),
+        var(--canvas);
+    }
+
+    .container {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 0 44px;
+      width: 100%;
+    }
+
+    /* ===== NAV ===== */
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      background: rgba(252,250,247,0.90);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .nav-brand {
+      font-family: 'DM Sans', Arial, sans-serif;
+      font-weight: 700;
+      font-size: 12px;
+      color: var(--ink);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .nav-brand span {
+      color: var(--terracotta);
+    }
+
+    .nav-slides {
+      display: flex;
+      gap: 7px;
+    }
+
+    .nav-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--border-strong);
+      cursor: pointer;
+      transition: all 0.2s;
+      border: none;
+      padding: 0;
+    }
+
+    .nav-dot:hover,
+    .nav-dot.active {
+      background: var(--terracotta);
+      transform: scale(1.25);
+    }
+
+    /* ===== SLIDE COUNTER ===== */
+    .slide-counter {
+      position: absolute;
+      top: 34px;
+      right: 40px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+    }
+
+    /* ===== SLIDE LABEL ===== */
+    .slide-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0;
+      border: none;
+      background: none;
+      font-family: 'DM Sans', Arial, sans-serif;
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--terracotta);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      margin-bottom: 20px;
+    }
+
+    .slide-label .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--terracotta);
+      animation: pulse-dot 2s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+
+    /* ===== SECTION HEADING ===== */
+    .section-heading {
+      font-size: 10px;
+      font-family: 'DM Sans', Arial, sans-serif;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.11em;
+      margin-bottom: 10px;
+    }
+
+    /* ===== DIVIDER ===== */
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: 36px 0;
+    }
+
+    /* ===== CARDS ===== */
+    .card,
+    .card-green {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 26px;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .card-green {
+      background: var(--terracotta-tint);
+      border-color: rgba(198,90,53,0.20);
+      box-shadow: none;
+    }
+
+    /* ===== BULLET LIST ===== */
+    .bullet-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .bullet-list li {
+      position: relative;
+      padding-left: 22px;
+      font-size: 15px;
+      color: var(--ink-secondary);
+      line-height: 1.6;
+    }
+
+    .bullet-list li::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0.72em;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--terracotta);
+    }
+
+    .bullet-list li strong {
+      color: var(--ink);
+      font-weight: 600;
+    }
+
+    /* ===== NUMBERED LIST ===== */
+    .numbered-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      counter-reset: item;
+    }
+
+    .numbered-list li {
+      position: relative;
+      padding-left: 38px;
+      font-size: 15px;
+      color: var(--ink-secondary);
+      line-height: 1.6;
+      counter-increment: item;
+    }
+
+    .numbered-list li::before {
+      content: counter(item);
+      position: absolute;
+      left: 0;
+      top: 2px;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--terracotta-tint);
+      border: 1px solid rgba(198,90,53,0.22);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      color: var(--terracotta-deep);
+    }
+
+    .numbered-list li strong {
+      color: var(--ink);
+      font-weight: 600;
+    }
+
+    /* ===== CODE BLOCK ===== */
+    .code-block {
+      background: #2A2420;
+      border: 1px solid #3A302B;
+      border-radius: 10px;
+      padding: 20px 24px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      line-height: 1.8;
+      color: #F6EEE8;
+      overflow-x: auto;
+      white-space: pre;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .code-block .kw {
+      color: #E8B39C;
+    }
+
+    .code-block .cm {
+      color: #B5A39A;
+      font-style: italic;
+    }
+
+    /* ===== TABLE ===== */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .data-table th {
+      font-family: 'DM Sans', Arial, sans-serif;
+      font-weight: 700;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      padding: 12px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-strong);
+    }
+
+    .data-table th:not(:first-child) {
+      text-align: right;
+    }
+
+    .data-table td {
+      padding: 12px 14px;
+      color: var(--ink-secondary);
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+
+    .data-table td:not(:first-child) {
+      text-align: right;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+    }
+
+    .data-table tr.highlight td {
+      color: var(--ink);
+      font-weight: 600;
+    }
+
+    .data-table tr.highlight td:not(:first-child) {
+      color: var(--terracotta-deep);
+    }
+
+    .data-table tbody tr:hover td {
+      background: var(--surface-soft);
+    }
+
+    .table-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: var(--shadow-soft);
+    }
+
+    /* ===== CALLOUT ===== */
+    .callout {
+      background: var(--surface-soft);
+      border-left: 3px solid var(--terracotta);
+      border-radius: 0 10px 10px 0;
+      padding: 16px 20px;
+      font-size: 14px;
+      color: var(--ink-secondary);
+      line-height: 1.65;
+    }
+
+    .callout strong {
+      color: var(--ink);
+    }
+
+    .callout.speaker {
+      background: var(--surface-warm);
+      border-left-color: var(--border-strong);
+      font-style: italic;
+      font-size: 13.5px;
+    }
+
+    /* ===== STAT ROW ===== */
+    .stat-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    .stat-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 22px;
+      text-align: left;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .stat-box .stat-value {
+      font-family: 'Instrument Serif', Georgia, serif;
+      font-weight: 400;
+      font-size: 34px;
+      color: var(--terracotta-deep);
+      line-height: 1;
+      margin-bottom: 8px;
+    }
+
+    .stat-box .stat-label {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    /* ===== GRID 2 ===== */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+
+    /* ===== INSIGHT ITEM ===== */
+    .insight-item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 22px 24px;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .insight-item .insight-num {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      color: var(--terracotta);
+      margin-bottom: 8px;
+      letter-spacing: 0.06em;
+    }
+
+    .insight-item h4 {
+      font-size: 22px;
+      color: var(--ink);
+      margin-bottom: 8px;
+      line-height: 1.18;
+    }
+
+    .insight-item p {
+      font-size: 13.5px;
+      color: var(--ink-secondary);
+      line-height: 1.6;
+    }
+
+    /* ===== RIGOR ITEM ===== */
+    .rigor-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      padding: 16px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .rigor-item:last-child {
+      border-bottom: none;
+    }
+
+    .rigor-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: var(--terracotta-tint);
+      border: 1px solid rgba(198,90,53,0.20);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      color: var(--terracotta);
+      font-size: 0;
+      position: relative;
+    }
+
+    .rigor-item:nth-child(1) .rigor-icon::after { content: '01'; }
+    .rigor-item:nth-child(2) .rigor-icon::after { content: '02'; }
+    .rigor-item:nth-child(3) .rigor-icon::after { content: '03'; }
+    .rigor-item:nth-child(4) .rigor-icon::after { content: '04'; }
+    .rigor-item:nth-child(5) .rigor-icon::after { content: '05'; }
+    .rigor-item:nth-child(6) .rigor-icon::after { content: '06'; }
+    .rigor-item:nth-child(7) .rigor-icon::after { content: '07'; }
+    .rigor-item:nth-child(8) .rigor-icon::after { content: '08'; }
+
+    .rigor-icon::after {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 9px;
+      font-weight: 500;
+      color: var(--terracotta-deep);
+    }
+
+    .rigor-item p {
+      font-size: 14px;
+      color: var(--ink-secondary);
+      line-height: 1.6;
+    }
+
+    .rigor-item p strong {
+      color: var(--ink);
+    }
+
+    /* ===== CLOSE PRINCIPLES ===== */
+    .principle {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      padding: 20px 22px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .principle-num {
+      font-family: 'Instrument Serif', Georgia, serif;
+      font-weight: 400;
+      font-size: 32px;
+      color: var(--terracotta-light);
+      line-height: 1;
+      flex-shrink: 0;
+      min-width: 28px;
+    }
+
+    .principle p {
+      font-size: 15px;
+      color: var(--ink-secondary);
+      line-height: 1.55;
+    }
+
+    .principle p strong {
+      color: var(--ink);
+    }
+
+    /* ===== LINKS ROW ===== */
+    .links-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 32px;
+    }
+
+    .link-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border-strong);
+      background: var(--surface);
+      font-size: 13px;
+      color: var(--ink-secondary);
+      text-decoration: none;
+      transition: border-color 0.2s, color 0.2s, background 0.2s;
+    }
+
+    .link-chip:hover {
+      border-color: var(--terracotta);
+      color: var(--terracotta-deep);
+      background: var(--terracotta-tint);
+    }
+
+    .link-chip svg {
+      flex-shrink: 0;
+    }
+
+    /* ===== APPENDIX ===== */
+    .appendix-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .appendix-item:last-child {
+      border-bottom: none;
+    }
+
+    .appendix-tag {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      color: var(--terracotta-deep);
+      background: var(--terracotta-tint);
+      border: 1px solid rgba(198,90,53,0.20);
+      border-radius: 5px;
+      padding: 2px 7px;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .appendix-item p {
+      font-size: 14px;
+      color: var(--ink-secondary);
+      line-height: 1.5;
+    }
+
+    /* ===== QA ITEM ===== */
+    .qa-item {
+      padding: 18px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .qa-item:last-child {
+      border-bottom: none;
+    }
+
+    .qa-q {
+      font-family: 'DM Sans', Arial, sans-serif;
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--ink);
+      margin-bottom: 6px;
+    }
+
+    .qa-a {
+      font-size: 13.5px;
+      color: var(--ink-secondary);
+      line-height: 1.6;
+    }
+
+    /* ===== HERO SPECIFIC ===== */
+    .hero-monolith {
+      font-size: clamp(7rem, 20vw, 18rem);
+      line-height: 0.8;
+      letter-spacing: -0.06em;
+      font-weight: 400;
+      text-transform: uppercase;
+      opacity: 0.035;
+      position: absolute;
+      top: 48%;
+      left: 56%;
+      transform: translate(-50%, -50%);
+      white-space: nowrap;
+      pointer-events: none;
+      user-select: none;
+      color: var(--terracotta);
+      font-family: 'Instrument Serif', Georgia, serif;
+    }
+
+    .hero-title {
+      font-family: 'Instrument Serif', Georgia, 'Times New Roman', serif;
+      font-weight: 400;
+      font-size: clamp(3.6rem, 8vw, 7rem);
+      line-height: 0.92;
+      letter-spacing: -0.03em;
+      color: var(--ink);
+      margin-bottom: 22px;
+      max-width: 900px;
+    }
+
+    .hero-title .green {
+      color: var(--terracotta);
+      text-shadow: none;
+    }
+
+    .hero-subtitle {
+      font-size: 17px;
+      color: var(--ink-secondary);
+      line-height: 1.65;
+      max-width: 650px;
+      margin-bottom: 34px;
+    }
+
+    .hero-meta {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.8;
+    }
+
+    .hero-answer {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px 26px;
+      margin-top: 32px;
+      max-width: 860px;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .hero-answer .label {
+      font-family: 'DM Sans', Arial, sans-serif;
+      font-weight: 700;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--terracotta-deep);
+      margin-bottom: 8px;
+    }
+
+    .hero-answer .q {
+      font-size: 14px;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+
+    .hero-answer .a {
+      font-size: 15px;
+      color: var(--ink);
+      line-height: 1.65;
+    }
+
+    /* ===== PERFORMANCE HIGHLIGHT ===== */
+    .perf-highlight {
+      background: var(--terracotta-tint);
+      border: 1px solid rgba(198,90,53,0.20);
+      border-radius: 12px;
+      padding: 24px 26px;
+      margin: 24px 0;
+    }
+
+    .perf-highlight p {
+      font-size: 15px;
+      color: var(--ink);
+      line-height: 1.65;
+      margin-bottom: 8px;
+    }
+
+    .perf-highlight p:last-child {
+      margin-bottom: 0;
+    }
+
+    .perf-highlight strong {
+      color: var(--terracotta-deep);
+    }
+
+    /* ===== DEMO PAGE ===== */
+    .demo-page {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 22px;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .demo-page .page-title {
+      font-family: 'DM Sans', Arial, sans-serif;
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--ink);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .demo-page .page-title .pg-num {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 9px;
+      color: var(--terracotta-deep);
+      background: var(--terracotta-tint);
+      border: 1px solid rgba(198,90,53,0.20);
+      border-radius: 4px;
+      padding: 2px 6px;
+    }
+
+    .demo-page p {
+      font-size: 13.5px;
+      color: var(--ink-secondary);
+      line-height: 1.6;
+    }
+
+    .demo-page ul {
+      list-style: none;
+      margin-top: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .demo-page ul li {
+      font-size: 13px;
+      color: var(--ink-secondary);
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .demo-page ul li::before {
+      content: '→';
+      color: var(--terracotta);
+      flex-shrink: 0;
+      font-size: 12px;
+      margin-top: 1px;
+    }
+
+    /* ===== EDITORIAL EMPHASIS ===== */
+    .slide h2 {
+      font-family: 'Instrument Serif', Georgia, 'Times New Roman', serif !important;
+      font-weight: 400 !important;
+      color: var(--ink) !important;
+      letter-spacing: -0.015em !important;
+    }
+
+    .slide p,
+    .slide li {
+      font-family: 'DM Sans', Arial, sans-serif;
+    }
+
+    .slide strong {
+      color: var(--ink);
+    }
+
+    .slide a {
+      color: var(--terracotta-deep);
+    }
+
+    .slide code {
+      color: var(--terracotta-deep);
+    }
+
+    .slide-counter::before {
+      content: '';
+      display: inline-block;
+      width: 24px;
+      height: 1px;
+      background: var(--border-strong);
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+
+    /* Make inline decorative backgrounds coherent with the system */
+    .slide [style*="rgba(61,220,132"] {
+      background: rgba(198,90,53,0.06) !important;
+    }
+
+    .slide [style*="rgba(74,80,86,0.2"] {
+      background: rgba(89,64,74,0.08) !important;
+    }
+
+    /* ===== RESPONSIVE ===== */
+    @media (max-width: 700px) {
+      .container { padding: 0 20px; }
+      nav { padding: 12px 20px; }
+      .slide { padding: 72px 0; }
+      .stat-row { grid-template-columns: 1fr; }
+      .grid-2 { grid-template-columns: 1fr; }
+      .hero-monolith { display: none; }
+      .slide-counter { display: none; }
+      .hero-title { font-size: clamp(3rem, 14vw, 5rem); }
+      .data-table { font-size: 11px; }
+      .data-table th, .data-table td { padding: 9px 10px; }
+      .rigor-item { gap: 10px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ===== NAV ===== -->
+  <nav>
+    <div class="nav-brand">Africa Growth <span>Explorer</span></div>
+    <div class="nav-slides" id="navDots"></div>
+  </nav>
+
+  <!-- ===== SLIDE 1: TITLE ===== -->
+  <section class="slide" id="slide-1" data-slide="1">
+    <div class="hero-monolith" aria-hidden="true">AFRICA</div>
+    <!-- Atmospheric blobs -->
+    <div style="position:absolute;top:25%;left:-8%;width:380px;height:380px;background:rgba(61,220,132,0.04);border-radius:50%;filter:blur(100px);pointer-events:none;" aria-hidden="true"></div>
+    <div style="position:absolute;bottom:20%;right:-8%;width:320px;height:320px;background:rgba(74,80,86,0.2);border-radius:50%;filter:blur(80px);pointer-events:none;" aria-hidden="true"></div>
+
+    <div class="container" style="position:relative;z-index:1;">
+      <div class="slide-counter">01 / 10</div>
+
+      <div class="slide-label reveal"><span class="dot"></span>AnalystLab Data Science Internship Capstone</div>
+
+      <div class="reveal" style="transition-delay:80ms">
+        <h1 class="hero-title">Africa Growth<br /><span class="green">Explorer</span></h1>
+        <p class="hero-subtitle">Predicting next-year GDP per capita growth across African economies from World Bank development indicators</p>
+      </div>
+
+      <div class="hero-answer reveal" style="transition-delay:160ms">
+        <div class="label">The question &amp; the answer - stated first</div>
+        <div class="q">Can recent development indicators predict near-term growth?</div>
+        <div class="a">No. The model does no better than guessing the historical average. The contribution is a build process careful enough to establish that rather than hide it.</div>
+      </div>
+
+      <div class="hero-meta reveal" style="margin-top:28px;transition-delay:240ms">
+        <div>Presenter: Theresia Saumu</div>
+        <div>Date: Aug 2026</div>
+        <div>Program: AnalystLab Data Science Internship Capstone</div>
+      </div>
+
+      <div class="callout speaker reveal" style="margin-top:24px;transition-delay:300ms">
+        "I'll give you the conclusion first, because it shapes everything after it. The model does no better than guessing the average and I can show you why that's the correct answer rather than a failed one."
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== SLIDE 2: PROBLEM STATEMENT ===== -->
+  <section class="slide" id="slide-2" data-slide="2">
+    <div class="container">
+      <div class="slide-counter">02 / 10</div>
+      <div class="slide-label reveal"><span class="dot"></span>Problem Statement · 45 s</div>
+
+      <h2 style="font-size:clamp(1.8rem,4vw,2.8rem);font-weight:900;color:var(--ledger-white);letter-spacing:-0.02em;margin-bottom:32px;" class="reveal">The task &amp; why it matters</h2>
+
+      <div class="grid-2 reveal" style="transition-delay:80ms">
+        <div class="card">
+          <div class="section-heading">The task</div>
+          <p style="font-size:15px;color:var(--ledger-white-dim);line-height:1.6;">Use this year's development indicators to predict next year's GDP per capita growth, across the <strong style="color:var(--ledger-white);">54 African UN member states</strong>.</p>
+        </div>
+        <div class="card">
+          <div class="section-heading">Why it's worth doing carefully</div>
+          <p style="font-size:15px;color:var(--ledger-white-dim);line-height:1.6;">Development analysts need screening tools. But a growth prediction is only useful if you can state how much better it is than "predict the average" - and that comparison is the step most portfolio projects skip.</p>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="reveal" style="transition-delay:160ms">
+        <div class="section-heading">Framing</div>
+        <ul class="bullet-list" style="margin-bottom:24px;">
+          <li><strong>Not:</strong> a tool that tells you what causes growth</li>
+          <li><strong>Is:</strong> a tool that finds patterns, plus a build process that refuses to ship a model which fails to beat the obvious alternatives</li>
+          <li><strong>Users:</strong> analysts, researchers, policy teams, NGOs</li>
+        </ul>
+      </div>
+
+      <div class="callout reveal" style="transition-delay:220ms">
+        <strong>The bar, set before any modelling:</strong> Beat all three trivial rules - predict the average, predict this year's growth, predict each country's own average - on the tuning data. Then check on untouched data whether the winning margin is big enough to be real. A model that cannot clear that bar does not ship.
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== SLIDE 3: DATASET ===== -->
+  <section class="slide" id="slide-3" data-slide="3">
+    <div class="container">
+      <div class="slide-counter">03 / 10</div>
+      <div class="slide-label reveal"><span class="dot"></span>Dataset Used · 50 s</div>
+
+      <h2 style="font-size:clamp(1.8rem,4vw,2.8rem);font-weight:900;color:var(--ledger-white);letter-spacing:-0.02em;margin-bottom:32px;" class="reveal">World Bank WDI, 2000–2024</h2>
+
+      <div class="stat-row reveal" style="transition-delay:80ms;margin-bottom:28px;">
+        <div class="stat-box">
+          <div class="stat-value">52</div>
+          <div class="stat-label">Countries in data<br />(54 configured; 2 missing this vintage)</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-value">1,205</div>
+          <div class="stat-label">Usable country-year rows<br />(1,300 total, paired with next-year growth)</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-value">14</div>
+          <div class="stat-label">Indicators across 6 themes<br />(13 report often enough to keep)</div>
+        </div>
+      </div>
+
+      <div class="reveal" style="transition-delay:160ms;margin-bottom:24px;">
+        <div class="section-heading">Source</div>
+        <p style="font-size:14px;color:var(--ledger-white-dim);">World Bank <strong style="color:var(--ledger-white);">World Development Indicators (WDI)</strong>, 2000–2024. Public, no licence restriction, cited in <code style="font-size:12px;color:var(--register-green);background:rgba(61,220,132,0.08);padding:1px 6px;border-radius:4px;">data/README.md</code>. Mauritius and Sudan are missing from this vintage and arrive with the next refresh - stated here rather than rounded up to "54".</p>
+      </div>
+
+      <div class="reveal" style="transition-delay:200ms;margin-bottom:24px;">
+        <div class="section-heading">What the model predicts</div>
+        <div class="code-block">Indicators at year t  →  Growth at year t+1
+Ghana 2019 indicators  →  Ghana 2020 GDP per capita growth</div>
+      </div>
+
+      <div class="reveal" style="transition-delay:240ms;">
+        <div class="section-heading">How the years were divided - note the target years run one later</div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Portion</th>
+                <th>Input years</th>
+                <th>Growth years predicted</th>
+                <th>n</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Training</td>
+                <td style="text-align:right;">2000–2017</td>
+                <td style="text-align:right;">2001–2018</td>
+                <td>905</td>
+              </tr>
+              <tr>
+                <td>Tuning</td>
+                <td style="text-align:right;">2018–2020</td>
+                <td style="text-align:right;"><strong style="color:var(--ledger-white);">2019–2021</strong> (includes the COVID crash)</td>
+                <td>150</td>
+              </tr>
+              <tr>
+                <td>Testing</td>
+                <td style="text-align:right;">2021–2023</td>
+                <td style="text-align:right;"><strong style="color:var(--ledger-white);">2022–2024</strong> (untouched, opened once)</td>
+                <td>150</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="callout speaker reveal" style="margin-top:24px;transition-delay:300ms;">
+        "The years being predicted matter more than the input years. Tuning covers the COVID crash; testing covers the recovery. That mismatch forces a design decision on the next slide."
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== SLIDE 4: ANALYSIS PROCESS ===== -->
+  <section class="slide" id="slide-4" data-slide="4">
+    <div class="container">
+      <div class="slide-counter">04 / 10</div>
+      <div class="slide-label reveal"><span class="dot"></span>Analysis Process · 70 s</div>
+
+      <h2 style="font-size:clamp(1.8rem,4vw,2.8rem);font-weight:900;color:var(--ledger-white);letter-spacing:-0.02em;margin-bottom:28px;" class="reveal">The build - <code style="font-size:0.7em;color:var(--register-green);">scripts/finalize_model.py</code></h2>
+
+      <div class="reveal" style="transition-delay:80ms;margin-bottom:28px;">
+        <div class="code-block"><span class="kw">Raw WDI download</span>
+→ select African countries by explicit country code
+→ build the country-year table, resolve duplicates
+→ attach each row's following-year growth
+→ drop indicators reporting under 60% of the time,
+     <span class="cm">measured on TRAINING rows only</span>
+→ tune settings using training years only, by fitting on an early
+     stretch and checking the years just after, then widening:
+     <span class="kw">trees</span>  depth {2,3} × learning rate {0.01,0.03,0.05} × rounds {100,200}
+     <span class="kw">Ridge</span>  penalty strength {1 … 3000}
+→ score the best of each family on the TUNING data
+→ <span class="kw">CHECK AGAINST THE TRIVIAL RULES</span> - fail ⇒ nothing is saved, build exits
+→ retrain on training data only, as decided in advance
+→ <span class="kw">OPEN THE TEST SET, exactly once:</span> score, and test whether the margin is real
+→ stamp every saved file with a data fingerprint, git commit, library versions</div>
+      </div>
+
+      <div class="grid-2 reveal" style="transition-delay:160ms;margin-bottom:24px;">
+        <div class="card">
+          <div class="section-heading">What the data showed</div>
+          <ul class="bullet-list">
+            <li>Development levels - electricity, internet, urbanisation, life expectancy, GDP per capita - move together, correlating at <strong>0.45–0.71</strong>. Five measurements of roughly the same underlying thing.</li>
+            <li>Current-year growth barely moves with any of them (correlations of <strong>0.13 or less</strong>)</li>
+            <li>Missing data clusters in particular countries - so the coverage test runs on training rows only</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="section-heading">Models compared</div>
+          <ul class="bullet-list" style="margin-bottom:16px;">
+            <li><strong>Ridge regression</strong> - straight-line model whose coefficients carry direction</li>
+            <li><strong>Gradient-boosted trees</strong> - deployed; won on tuning data and beat the trivial rules</li>
+          </ul>
+          <div class="section-heading" style="margin-top:16px;">The three trivial rules</div>
+          <p style="font-size:13px;color:var(--ledger-white-dim);line-height:1.55;">Predict the average · predict this year's growth · predict each country's own past average (using only years already seen)</p>
+        </div>
+      </div>
+
+      <div class="callout speaker reveal" style="transition-delay:240ms;">
+        "I decided how to retrain before opening the test set. The tuning years contain the COVID crash and the test years are the recovery - train across that break and predictions come out systematically low. I locked in training-only beforehand, and I report the alternative so you can see the cost."
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== SLIDE 5: MODEL PERFORMANCE ===== -->
+  <section class="slide" id="slide-5" data-slide="5">
+    <div class="container">
+      <div class="slide-counter">05 / 10</div>
+      <div class="slide-label reveal"><span class="dot"></span>Model Performance · 85 s</div>
+
+      <h2 style="font-size:clamp(1.8rem,4vw,2.8rem);font-weight:900;color:var(--ledger-white);letter-spacing:-0.02em;margin-bottom:8px;" class="reveal">Test set - growth years 2022–2024, n=150</h2>
+      <p style="font-size:13px;color:var(--steel);margin-bottom:24px;" class="reveal" style="transition-delay:40ms;">Lower MAE and RMSE are better; both are average error sizes in percentage points.</p>
+
+      <div class="table-wrap reveal" style="transition-delay:80ms;margin-bottom:24px;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Model</th>
+              <th>MAE</th>
+              <th>RMSE</th>
+              <th>R²</th>
+              <th>Direction right</th>
+              <th>Always-"up" scores</th>
+              <th>Gain</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Predict the average</td>
+              <td>1.90</td><td>2.84</td><td>−0.00</td><td>80.7%</td><td>80.7%</td><td>0.0 pts</td>
+            </tr>
+            <tr>
+              <td>Predict this year's growth</td>
+              <td>2.23</td><td>4.52</td><td>−1.54</td><td>77.3%</td><td>80.7%</td><td>−3.3 pts</td>
+            </tr>
+            <tr>
+              <td>Predict country's own average</td>
+              <td>1.94</td><td>2.88</td><td>−0.03</td><td>78.0%</td><td>80.7%</td><td>−2.7 pts</td>
+            </tr>
+            <tr class="highlight">
+              <td>Gradient-boosted trees (deployed)</td>
+              <td>1.82</td><td>2.79</td><td>0.03</td><td>80.7%</td><td>80.7%</td><td>0.0 pts</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="perf-highlight reveal" style="transition-delay:160ms;">
+        <p><strong>The model beats the predict-the-average rule by 0.07 percentage points.</strong></p>
+        <p>Resample the 150-row test set 5,000 times and that margin runs from 0.04 worse to 0.19 better.</p>
+        <p><strong>A range that includes losing means the lead is not real. The two perform the same. That is the finding.</strong></p>
+      </div>
+
+      <div class="callout speaker reveal" style="transition-delay:200ms;margin-bottom:16px;">
+        "The model wins by seven hundredths of a point. But there are only 150 rows in the test set, so I resampled it five thousand times to see how stable that is. On a good number of those resamples the model actually loses. When your margin includes losing, you don't have a margin - you have noise."
+      </div>
+
+      <div class="grid-2 reveal" style="transition-delay:240ms;">
+        <div class="card">
+          <div class="section-heading">Tuning data (where the model was chosen)</div>
+          <p style="font-size:14px;color:var(--ledger-white-dim);line-height:1.6;">Ridge 4.00 · trees <strong style="color:var(--register-green);">3.89</strong> · predict-the-average 4.04 - the trees cleared the bar by 3.7%, a margin well inside noise at 150 rows. The same non-result shows up here.</p>
+        </div>
+        <div class="card">
+          <div class="section-heading">Reading the direction figure honestly</div>
+          <p style="font-size:14px;color:var(--ledger-white-dim);line-height:1.6;">The model calls direction right <strong style="color:var(--ledger-white);">80.7%</strong> of the time. But growth was positive in 80.7% of test years - so always saying "up" scores exactly the same. Scoring up-years and down-years separately gives <strong style="color:var(--ledger-white);">51.3%</strong> - a coin flip. R² is +0.03: a model that has correctly learned to predict the mean and stop.</p>
+        </div>
+      </div>
+
+      <div class="callout speaker reveal" style="transition-delay:300ms;margin-top:16px;">
+        "If I put 80.7% on a slide with no context, it looks like the strongest number in the deck. It's the weakest. It's just how often growth happened to be positive."
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== SLIDE 6: KEY INSIGHTS ===== -->
+  <section class="slide" id="slide-6" data-slide="6">
+    <div class="container">
+      <div class="slide-counter">06 / 10</div>
+      <div class="slide-label reveal"><span class="dot"></span>Key Insights · 65 s</div>
+
+      <h2 style="font-size:clamp(1.8rem,4vw,2.8rem);font-weight:900;color:var(--ledger-white);letter-spacing:-0.02em;margin-bottom:32px;" class="reveal">Five things the data established</h2>
+
+      <div style="display:flex;flex-direction:column;gap:14px;">
+
+        <div class="insight-item reveal" style="transition-delay:60ms;">
+          <div class="insight-num">01 / 05</div>
+          <h4>Only 2 of 14 indicators made a reliable difference</h4>
+          <p>Shuffle one indicator's column at random, re-score, and see how much worse the model gets:</p>
+          <ul class="bullet-list" style="margin-top:10px;">
+            <li>GDP per capita <strong>0.046</strong> [0.018, 0.085]</li>
+            <li>Population growth <strong>0.017</strong> [0.000, 0.037]</li>
+            <li>For the other twelve - including electricity and inflation - the range of plausible values includes zero, meaning the model was not really using them</li>
+          </ul>
+          <p style="margin-top:10px;font-size:13px;color:var(--steel);">Scale check: scrambling the strongest indicator worsens predictions by 0.046, against typical errors near 3.9 - roughly one percent. Real enough to measure, far too small to act on.</p>
+        </div>
+
+        <div class="insight-item reveal" style="transition-delay:100ms;">
+          <div class="insight-num">02 / 05</div>
+          <h4>This measures size, never direction</h4>
+          <p>There is no "positive driver / negative driver" column, because shuffling a column tells you how much the model leaned on an indicator, not which way it pushed. An earlier draft had that column; it was a category error and was removed.</p>
+        </div>
+
+        <div class="insight-item reveal" style="transition-delay:140ms;">
+          <div class="insight-num">03 / 05</div>
+          <h4>Even the straight-line structure is faint</h4>
+          <p>Ridge settled on the strongest penalty in the grid - 3000, the largest value offered. Pulling predictions as hard as possible toward the average is the best a straight-line model can do here. Every coefficient is 0.14 or smaller.</p>
+        </div>
+
+        <div class="insight-item reveal" style="transition-delay:180ms;">
+          <div class="insight-num">04 / 05</div>
+          <h4>The big misses are events, not model failure</h4>
+          <p>Every worst case is a shock year: Libya 2021 (13.15 pp off), Cabo Verde 2021 (12.53 pp), Equatorial Guinea 2022 (11.01 pp). Conflict, tourism collapse, oil. No set of annual indicators anticipates these.</p>
+        </div>
+
+        <div class="insight-item reveal" style="transition-delay:220ms;">
+          <div class="insight-num">05 / 05</div>
+          <h4>Why believe this result</h4>
+          <p>The same dataset previously produced a "working" model that was in fact worse than a constant - its test error was nearly double that of simply predicting the average - because the winner had been picked using the test set, and the report's statistics were invented. Fixing the process removed the mirage. This is what the honest machinery reports.</p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== SLIDE 7: LIVE DEMO ===== -->
+  <section class="slide" id="slide-7" data-slide="7">
+    <div class="container">
+      <div class="slide-counter">07 / 10</div>
+      <div class="slide-label reveal"><span class="dot"></span>Streamlit App · 110 s</div>
+
+      <h2 style="font-size:clamp(1.8rem,4vw,2.8rem);font-weight:900;color:var(--ledger-white);letter-spacing:-0.02em;margin-bottom:32px;" class="reveal">Four pages: Aim = deision support</h2>
+
+      <div style="display:flex;flex-direction:column;gap:14px;">
+
+        <div class="demo-page reveal" style="transition-delay:60ms;">
+          <div class="page-title"><span class="pg-num">Page 1</span> Overview</div>
+          <p>The problem, the data, the model, the headline result with its caveat stated up front, and the reminder that none of this shows cause and effect.</p>
+        </div>
+
+        <div class="demo-page reveal" style="transition-delay:100ms;">
+          <div class="page-title"><span class="pg-num">Page 2</span> Explore Africa</div>
+          <p>Country selector, growth over time (what happened vs what the model was asked to predict), indicator trends, regional comparison.</p>
+        </div>
+
+        <div class="demo-page reveal" style="transition-delay:140ms;">
+          <div class="page-title"><span class="pg-num">Page 3</span> Model Performance</div>
+          <p>The "this margin is not real" banner; how the model scores against the trivial rules on both test and tuning data, always showing what always-saying-"up" would score; where predictions land against reality; the errors; which indicators the model actually used, with the ones it ignored listed separately; the Ridge direction panel; results year by year.</p>
+        </div>
+
+        <div class="demo-page reveal" style="transition-delay:180ms;">
+          <div class="page-title"><span class="pg-num">Page 4</span> Scenario Explorer ← the decision-support feature</div>
+          <ul>
+            <li>Pick a country and year → its actual indicator values load, with a notice if any were filled in</li>
+            <li>Sliders stay inside the range the model trained on, and warn past the edges - inflation warns above ~49.5 rather than 92</li>
+            <li>If a country's real value sits outside that range, the slider is pulled to the edge <strong style="color:var(--ledger-white);">and says so</strong></li>
+            <li>The change table re-runs the model once per indicator, and says plainly that the effects do not add up</li>
+            <li>The cause-and-effect warning stays on screen</li>
+          </ul>
+        </div>
+
+      </div>
+
+      <div class="callout reveal" style="margin-top:24px;transition-delay:240ms;">
+        <strong>Note:</strong> Narrate from live output only. No figures are scripted here - an earlier draft's illustrative numbers were removed.
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== SLIDE 8: RECOMMENDATIONS ===== -->
+  <section class="slide" id="slide-8" data-slide="8">
+    <div class="container">
+      <div class="slide-counter">08 / 10</div>
+      <div class="slide-label reveal"><span class="dot"></span>Recommendations · 55 s</div>
+
+      <h2 style="font-size:clamp(1.8rem,4vw,2.8rem);font-weight:900;color:var(--ledger-white);letter-spacing:-0.02em;margin-bottom:32px;" class="reveal">Seven recommendations</h2>
+
+      <div class="reveal" style="transition-delay:80ms;margin-bottom:28px;">
+        <div class="section-heading">For anyone using this tool</div>
+        <ol class="numbered-list">
+          <li><strong>Do not allocate funding based on these predictions.</strong> They cannot be told apart from simply guessing the average. This is the first recommendation because it is the one with consequences.</li>
+          <li><strong>Use it to compare and describe</strong> development profiles - the Explore page. That is what the data supports.</li>
+          <li><strong>Treat every scenario change as the model's response</strong>, never as the effect of a policy.</li>
+        </ol>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="reveal" style="transition-delay:160ms;">
+        <div class="section-heading">For the next round of work</div>
+        <ol class="numbered-list" style="counter-reset:item 3;">
+          <li><strong>Find faster-moving data</strong> - satellite nightlights, port and air-traffic volumes, mobile-money flows, survey expectations - rather than more annual indicators. Tying with the average argues for better signal, not more models.</li>
+          <li><strong>Keep the automatic check against trivial rules, and keep deciding the rules before looking at the data.</strong> That is the reusable asset from this project.</li>
+          <li><strong>Re-download the WDI data</strong> to restore Mauritius and Sudan before quoting country coverage externally.</li>
+          <li><strong>Watch for periods that behave differently.</strong> This result is partly a statement about a 25-year window containing three very different economic eras.</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== SLIDE 9: ENGINEERING & RIGOR ===== -->
+  <section class="slide" id="slide-9" data-slide="9">
+    <div class="container">
+      <div class="slide-counter">09 / 10</div>
+      <div class="slide-label reveal"><span class="dot"></span>Engineering &amp; Rigor · 40 s</div>
+
+      <h2 style="font-size:clamp(1.8rem,4vw,2.8rem);font-weight:900;color:var(--ledger-white);letter-spacing:-0.02em;margin-bottom:32px;" class="reveal">What makes the result trustworthy</h2>
+
+      <div class="card reveal" style="transition-delay:80ms;">
+        <div class="rigor-item">
+          <div class="rigor-icon"></div>
+          <p><strong>Nothing from the future leaks backwards:</strong> the coverage test runs on training rows only; filling gaps and rescaling happen inside the model, refitted per fold; each row's target comes from the following year within the same country; the test set stays closed until one final scoring pass</p>
+        </div>
+        <div class="rigor-item">
+          <div class="rigor-icon"></div>
+          <p><strong>A model worse than guessing cannot ship</strong> - the check runs before anything is saved, and a failure exits with an error and writes nothing</p>
+        </div>
+        <div class="rigor-item">
+          <div class="rigor-icon"></div>
+          <p><strong>Settings genuinely tuned on training years only</strong>, fitting on an early stretch and checking the years just after, with the fold-by-fold results committed (<code style="font-size:12px;color:var(--register-green);">models/cv_results_*.csv</code>)</p>
+        </div>
+        <div class="rigor-item">
+          <div class="rigor-icon"></div>
+          <p><strong>The retraining policy was fixed in advance</strong>, and the alternative is reported as a cost: error 2.03, predictions 0.86 points low</p>
+        </div>
+        <div class="rigor-item">
+          <div class="rigor-icon"></div>
+          <p><strong>The headline comparison was tested for significance</strong>, and reported whatever it said</p>
+        </div>
+        <div class="rigor-item">
+          <div class="rigor-icon"></div>
+          <p><strong>Every saved file records its origin:</strong> data fingerprint, git commit, library versions, which years went where. Two runs produce identical numbers</p>
+        </div>
+        <div class="rigor-item">
+          <div class="rigor-icon"></div>
+          <p><strong>86 passing tests</strong>, including deliberate sabotage: corrupt the test answers and model selection stays byte-for-byte identical; force the trivial-rule check to fail and confirm nothing gets saved</p>
+        </div>
+        <div class="rigor-item">
+          <div class="rigor-icon"></div>
+          <p><strong>Notebooks run start to finish</strong>, with no hardcoded paths, loading the shipped model rather than picking a new one</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== SLIDE 10: CLOSE ===== -->
+  <section class="slide" id="slide-10" data-slide="10">
+    <div class="container">
+      <div class="slide-counter">10 / 10</div>
+      <div class="slide-label reveal"><span class="dot"></span>Close · 15 s</div>
+
+      <h2 style="font-size:clamp(1.8rem,4vw,2.8rem);font-weight:900;color:var(--ledger-white);letter-spacing:-0.02em;margin-bottom:32px;" class="reveal">Three principles to take away</h2>
+
+      <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:40px;">
+        <div class="principle reveal" style="transition-delay:60ms;">
+          <div class="principle-num">1</div>
+          <p><strong>A result you can defend beats a win you can't.</strong> The process is the contribution.</p>
+        </div>
+        <div class="principle reveal" style="transition-delay:110ms;">
+          <div class="principle-num">2</div>
+          <p><strong>Make your build check the obvious alternatives</strong> - "does this beat what it replaces?" belongs in the code, not the discussion section.</p>
+        </div>
+        <div class="principle reveal" style="transition-delay:160ms;">
+          <div class="principle-num">3</div>
+          <p><strong>Generate every number in every document from the saved model</strong>, so the write-up cannot drift from what was actually built.</p>
+        </div>
+      </div>
+
+      <div class="divider reveal" style="transition-delay:200ms;"></div>
+
+      <div class="links-row reveal" style="transition-delay:240ms;">
+        <a class="link-chip" href="#">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+          GitHub - code, saved model, tests, executed notebooks, full report
+        </a>
+        <a class="link-chip" href="#">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          App - verified locally via <code style="font-size:11px;">streamlit run app.py</code>; no public URL (README → Deployment)
+        </a>
+        <a class="link-chip" href="#">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          Report - <code style="font-size:11px;">reports/capstone_report.md</code>
+        </a>
+        <a class="link-chip" href="#">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+          Contact - theresia.saumu@gmail.com
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Q&A ===== -->
+  <section class="slide" id="slide-qa" style="min-height:auto;padding:60px 0;" data-slide="qa">
+    <div class="container">
+      <div class="slide-label reveal"><span class="dot"></span>Q&amp;A Talking Points - not counted in runtime</div>
+
+      <h2 style="font-size:clamp(1.5rem,3vw,2.2rem);font-weight:900;color:var(--ledger-white);letter-spacing:-0.02em;margin-bottom:28px;" class="reveal">Anticipated questions</h2>
+
+      <div class="card reveal" style="transition-delay:80ms;">
+        <div class="qa-item">
+          <div class="qa-q">Why trees over Ridge?</div>
+          <div class="qa-a">On the tuning data the best tree model missed by 3.89 points against Ridge's 4.00, and it beat the trivial rules.</div>
+        </div>
+        <div class="qa-item">
+          <div class="qa-q">Is tying with the trivial rule a failure?</div>
+          <div class="qa-a">No. It is a measured, tested statement about what this data can and cannot predict, produced by a process with no way to fake a result.</div>
+        </div>
+        <div class="qa-item">
+          <div class="qa-q">Why did early stopping matter?</div>
+          <div class="qa-a">The previous version overfit because scikit-learn's automatic setting switches itself off below 10,000 samples, and there are 905 training rows. Setting it explicitly bounds the model - it now stops at 45 rounds out of 200.</div>
+        </div>
+        <div class="qa-item">
+          <div class="qa-q">Why fix the retraining policy in advance?</div>
+          <div class="qa-a">The tuning years contain the COVID crash. Training across it pushes predictions systematically low: error 2.03 and 0.86 points low, against 1.82 and 0.08 high for training-only.</div>
+        </div>
+        <div class="qa-item">
+          <div class="qa-q">Why not tune harder?</div>
+          <div class="qa-a">Hunting for settings that score well on the test set is exactly how the previous version shipped a bad model. The grid is small, fixed in advance, and scored only within training years.</div>
+        </div>
+        <div class="qa-item">
+          <div class="qa-q">How often retrain?</div>
+          <div class="qa-a">Annually, as WDI updates. The trivial-rule check and the significance test must pass each time.</div>
+        </div>
+        <div class="qa-item">
+          <div class="qa-q">Can this inform policy?</div>
+          <div class="qa-a">As background screening only. Cause-and-effect claims need experiments or natural experiments.</div>
+        </div>
+        <div class="qa-item">
+          <div class="qa-q">What would change your mind?</div>
+          <div class="qa-a">Faster-moving data, or a test window that isn't a pandemic recovery. Both are in Recommendations.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== APPENDIX ===== -->
+  <section class="slide" id="slide-appendix" style="min-height:auto;padding:60px 0 80px;" data-slide="appendix">
+    <div class="container">
+      <div class="slide-label reveal"><span class="dot"></span>Appendix - only if asked</div>
+
+      <h2 style="font-size:clamp(1.5rem,3vw,2.2rem);font-weight:900;color:var(--ledger-white);letter-spacing:-0.02em;margin-bottom:28px;" class="reveal">Supporting material</h2>
+
+      <div class="card reveal" style="transition-delay:80ms;">
+        <div class="appendix-item">
+          <span class="appendix-tag">A1</span>
+          <p>Fold-by-fold tuning results (<code style="font-size:12px;color:var(--register-green);">models/cv_results_*.csv</code>)</p>
+        </div>
+        <div class="appendix-item">
+          <span class="appendix-tag">A2</span>
+          <p>How the ranges around each number were computed, and the head-to-head significance test (report §7)</p>
+        </div>
+        <div class="appendix-item">
+          <span class="appendix-tag">A3</span>
+          <p>The largest misses, every row checked against the frozen predictions (report §7)</p>
+        </div>
+        <div class="appendix-item">
+          <span class="appendix-tag">A4</span>
+          <p>Which indicators were kept and why - secondary school enrolment was dropped for reporting only 59.9% of the time</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== SCRIPT ===== -->
+  <script>
+    // Build nav dots
+    const slides = document.querySelectorAll('[data-slide]');
+    const navDots = document.getElementById('navDots');
+    const numberedSlides = Array.from(slides).filter(s => !isNaN(parseInt(s.dataset.slide)));
+
+    numberedSlides.forEach((slide, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'nav-dot';
+      btn.title = 'Slide ' + (i + 1);
+      btn.addEventListener('click', () => {
+        slide.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      navDots.appendChild(btn);
+    });
+
+    // Active dot on scroll
+    const allDots = navDots.querySelectorAll('.nav-dot');
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const idx = numberedSlides.indexOf(entry.target);
+          if (idx !== -1) {
+            allDots.forEach(d => d.classList.remove('active'));
+            allDots[idx]?.classList.add('active');
+          }
+        }
+      });
+    }, { threshold: 0.4 });
+
+    numberedSlides.forEach(s => observer.observe(s));
+
+    // Scroll reveal
+    const revealObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          revealObserver.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.08, rootMargin: '0px 0px -40px 0px' });
+
+    document.querySelectorAll('.reveal').forEach(el => revealObserver.observe(el));
+  </script>
+</body>
+</html>
