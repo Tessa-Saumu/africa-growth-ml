@@ -113,6 +113,38 @@ Four pages, built with Streamlit. It loads the saved model and never retrains or
 
 ---
 
+## Design system
+
+The interface follows a single visual language, **Terracotta Editorial**: a warm
+near-white canvas, dark ink typography, and terracotta used only as an
+analytical accent (selected navigation, the primary data series, the one metric
+that matters most on a page).
+
+| Layer | Where it lives |
+| --- | --- |
+| Design tokens (colours, spacing, shadows, fonts) | `src/theme.py` (`COLORS`, `CHART_COLORS`) |
+| One centralised stylesheet | `src/theme.build_editorial_css()`, injected once by `inject_editorial_styles()` |
+| Editorial components (headers, KPIs, callouts, guardrail, research tables, Africa map SVG) | `src/ui.py`, pure functions returning HTML |
+| Chart language (Matplotlib theme and every project chart) | `src/visualization.py` |
+| Streamlit chrome (widgets, dataframes, focus rings, fonts) | `.streamlit/config.toml`, mirroring the same tokens |
+
+Rules the test suite enforces: no emoji, no em dashes, no marketing copy, no
+colour outside the tokens, and no Streamlit default headings or metrics in
+`app.py` (see `tests/test_theme.py`, `tests/test_ui.py`, `tests/test_app.py`).
+
+**Typography.** Instrument Serif for display type, DM Sans for the interface.
+Both are bundled under the SIL Open Font License in `static/fonts/` and served
+with the app (`server.enableStaticServing`), so the browser needs no font CDN
+and server-rendered Matplotlib charts use the same faces.
+
+**Geography.** `data/reference/africa_geometry.json` is a simplified Natural
+Earth 1:110m admin-0 outline (public domain), built by
+`scripts/build_geo_reference.py`; `data/reference/africa_centroids.csv` places
+the island states the outline is too coarse to show. Neither adds a geospatial
+dependency at runtime.
+
+---
+
 ## Quick start
 
 ```bash
@@ -168,7 +200,8 @@ africa-growth-ml/
 ├── config/indicators.yaml      # Indicators, countries, date splits, tuning grid
 ├── data/
 │   ├── README.md               # Download instructions + known gaps
-│   └── processed/              # The prepared country-year table
+│   ├── processed/              # The prepared country-year table
+│   └── reference/              # Africa outline and centroids for the map
 ├── figures/                    # All charts
 ├── models/                     # Trained model, its metadata, frozen predictions
 ├── notebooks/                  # Data profiling and model evaluation, both executed
@@ -179,9 +212,14 @@ africa-growth-ml/
 ├── scripts/
 │   ├── finalize_model.py       # Tune → check → score once → save
 │   ├── build_report_assets.py  # Generates every document number from the model
+│   ├── build_geo_reference.py  # Simplifies the Natural Earth outline for the map
 │   └── build_report_pdf.py     # Converts the report to PDF
-├── src/                        # Data loading, features, training, evaluation, charts
-└── tests/                      # 86 tests, including guards against the mistakes above
+├── static/                     # Bundled OFL fonts and favicon, served with the app
+├── src/                        # Data, features, training, evaluation, charts, design system
+│   ├── theme.py                # Design tokens and the single CSS injection
+│   ├── ui.py                   # Editorial components (headers, KPIs, tables, map)
+│   └── visualization.py        # The project chart language
+└── tests/                      # 166 tests, including guards against the mistakes above
 ```
 
 ---

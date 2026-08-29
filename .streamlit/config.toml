@@ -1,16 +1,80 @@
 # Africa Growth Explorer - Streamlit settings
-# M10: enableCORS removed (triggers a security warning at boot); no hardcoded
-# port (Cloud manages its own). Theme values mirror src/visualization.py.
+#
+# The Terracotta Editorial design system lives in src/theme.py. The values
+# below mirror those design tokens so Streamlit's own chrome (widgets,
+# dataframes, focus rings) starts from the same palette instead of the
+# default blue, and the bundled OFL fonts are served with the app.
+#
+# Requires Streamlit >= 1.62 for [[theme.fontFaces]] and the radius,
+# border and dataframe theme options (see requirements.txt).
 
 [theme]
-primaryColor = "#1B4F72"
-backgroundColor = "#F8F9FA"
-secondaryBackgroundColor = "#FFFFFF"
-textColor = "#2C3E50"
-font = "sans serif"
+base = "light"
+primaryColor = "#C65A35"
+backgroundColor = "#FCFAF7"
+secondaryBackgroundColor = "#F7F0EA"
+textColor = "#241D19"
+linkColor = "#A94325"
+linkUnderline = false
+borderColor = "#E7DDD5"
+dataframeBorderColor = "#E7DDD5"
+dataframeHeaderBackgroundColor = "#F7F0EA"
+showWidgetBorder = true
+showSidebarBorder = true
+baseRadius = "12px"
+buttonRadius = "8px"
+baseFontSize = 16
+font = "DM Sans, Arial, sans-serif"
+headingFont = "Instrument Serif, Georgia, serif"
+codeFont = "monospace"
+headingFontWeights = [400, 400, 400, 500, 500, 600]
+chartCategoricalColors = ["#C65A35", "#59404A", "#B98278", "#D9B88C", "#72745F"]
+chartSequentialColors = [
+    "#F4E4DA", "#EDD2C2", "#E8B39C", "#DE9375", "#D4744F",
+    "#C65A35", "#B84E2D", "#A94325", "#93381E", "#7C2E18",
+]
+redColor = "#9B4637"
+orangeColor = "#B57A32"
+yellowColor = "#D9B88C"
+greenColor = "#637A5A"
+blueColor = "#59404A"
+violetColor = "#59404A"
+grayColor = "#8B7D74"
+
+[theme.sidebar]
+backgroundColor = "#F7F0EA"
+secondaryBackgroundColor = "#FCFAF7"
+borderColor = "#E7DDD5"
+
+# Bundled OFL typefaces, served from static/ so the app does not depend on a
+# third-party font CDN at runtime.
+[[theme.fontFaces]]
+family = "DM Sans"
+url = "app/static/fonts/DMSans-Regular.ttf"
+weight = "400"
+style = "normal"
+
+[[theme.fontFaces]]
+family = "DM Sans"
+url = "app/static/fonts/DMSans-Medium.ttf"
+weight = "500"
+style = "normal"
+
+[[theme.fontFaces]]
+family = "DM Sans"
+url = "app/static/fonts/DMSans-SemiBold.ttf"
+weight = "600"
+style = "normal"
+
+[[theme.fontFaces]]
+family = "Instrument Serif"
+url = "app/static/fonts/InstrumentSerif-Regular.ttf"
+weight = "400"
+style = "normal"
 
 [server]
 headless = true
+enableStaticServing = true
 
 [browser]
 gatherUsageStats = false

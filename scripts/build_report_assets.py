@@ -32,6 +32,7 @@ from src.config import load_config
 from src.evaluate import compute_metrics_by_group, compute_worst_errors
 from src.visualization import (
     get_project_palette,
+    plot_correlation_matrix,
     plot_actual_vs_predicted,
     plot_feature_importance,
     plot_residuals,
@@ -391,21 +392,17 @@ def build_figures(art: Dict[str, Any], fig_dir: Path) -> List[str]:
     series = pd.Series(series_src["importance_mean"].to_numpy(),
                        index=series_src["feature"].to_numpy())
     fig = plot_feature_importance(
-        series, title="Permutation importance (validation) — CI-excludes-zero features")
+        series, title="Permutation importance (validation): CI-excludes-zero features")
     fig.savefig(fig_dir / "feature_importance.png", dpi=110)
     plt.close(fig)
     written.append("feature_importance.png")
 
     cfg = art["config"]
     feats = [f.code for f in cfg.features if f.code in art["panel"].columns]
-    corr = art["panel"][feats].corr()
-    mask = np.triu(np.ones_like(corr, dtype=bool), k=1)
-    fig, ax = plt.subplots(figsize=(11, 9))
-    import seaborn as sns
-    sns.heatmap(corr, mask=mask, ax=ax, cmap="RdBu_r", center=0, vmin=-1, vmax=1,
-                annot=True, fmt=".2f", square=True, linewidths=0.5,
-                cbar_kws={"shrink": 0.8})
-    ax.set_title("Feature correlations (committed panel)")
+    # Same diverging colormap as the application: no rainbow, no default RdBu.
+    fig = plot_correlation_matrix(
+        art["panel"], feats, title="Feature correlations (committed panel)")
+    fig.set_size_inches(11, 9)
     fig.tight_layout()
     fig.savefig(fig_dir / "correlation_heatmap.png", dpi=110)
     plt.close(fig)

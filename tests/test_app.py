@@ -288,6 +288,135 @@ def test_contribution_table_sorts_by_magnitude_not_string():
 def test_contribution_effects_are_numeric_in_source():
     """The app must not re-introduce string formatting in that column."""
     src = (REPO_ROOT / "app.py").read_text(encoding="utf-8")
-    assert '"Individual effect (pp)": f"' not in src, (
-        "Individual effect column is being formatted as a string again (B13)")
+    assert '"Model response (pp)": f"' not in src, (
+        "Model response column is being formatted as a string again (B13)")
     assert 'key=abs' not in src, "sort_values(key=abs) re-introduced (B13)"
+
+
+# ----------------------------------------------------------------------------
+# Terracotta Editorial design system: non-negotiables
+# ----------------------------------------------------------------------------
+
+DESIGN_FILES = ["app.py", "src/ui.py", "src/theme.py", "src/visualization.py"]
+
+EMOJI_RANGES = (
+    (0x1F300, 0x1FAFF),
+    (0x2600, 0x27BF),
+    (0x1F000, 0x1F2FF),
+    (0x2190, 0x21FF),
+    (0xFE0F, 0xFE0F),
+)
+
+
+@pytest.mark.parametrize("rel", DESIGN_FILES)
+def test_no_emoji_anywhere_in_the_interface(rel):
+    """Spec section 43: no emoji in titles, navigation, labels or copy."""
+    text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+    offenders = {
+        ch for ch in text
+        if any(lo <= ord(ch) <= hi for lo, hi in EMOJI_RANGES)
+    }
+    assert not offenders, f"{rel} contains emoji: {offenders}"
+
+
+@pytest.mark.parametrize("rel", DESIGN_FILES)
+def test_no_em_dashes(rel):
+    """Spec section 46: em dashes are not used anywhere in the product."""
+    text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+    assert "\u2014" not in text, f"{rel} contains an em dash"
+
+
+def test_no_generic_marketing_language():
+    """Spec sections 44 and 45: no SaaS marketing verbs in the copy."""
+    text = (REPO_ROOT / "app.py").read_text(encoding="utf-8").lower()
+    for word in ["unlock", "empower", "supercharge", "revolutioniz",
+                 "seamlessly", "cutting-edge", "next-generation",
+                 "ai-powered", "game-changing", "at a glance",
+                 "dive in", "powered by"]:
+        assert word not in text, f"marketing language in app copy: {word}"
+
+
+def test_app_uses_the_editorial_components_not_default_streamlit_chrome():
+    """Headings and metrics come from the design system, not st defaults."""
+    src = (REPO_ROOT / "app.py").read_text(encoding="utf-8")
+    for banned in ["st.title(", "st.header(", "st.subheader(", "st.metric(",
+                   "st.warning(", "st.info("]:
+        assert banned not in src, f"{banned} bypasses the design system"
+    assert "inject_editorial_styles()" in src
+    assert "ui.page_header(" in src and "ui.kpi_grid(" in src
+
+
+def test_navigation_labels_are_unchanged_and_plain():
+    """Spec section 42: keep the four analytical page names, no additions."""
+    assert app.PAGES == [
+        "Project Overview",
+        "Explore Africa",
+        "Model Performance",
+        "Scenario Explorer",
+    ]
+
+
+def test_causal_guardrail_preserves_the_original_substance():
+    """Spec sections 29 and 58: the caveat may be restyled, never weakened."""
+    src = (REPO_ROOT / "app.py").read_text(encoding="utf-8")
+    for phrase in [
+        "not for causal policy-effect estimation",
+        "statistical associations",
+        "cannot prove",
+        "not causal estimates",
+    ]:
+        assert phrase in src, f"causal guardrail lost the phrase: {phrase}"
+
+
+def test_split_summary_reads_from_metadata():
+    meta = {"split_target_years": {"train": [2001, 2018], "val": [2019, 2021],
+                                   "test": [2022, 2024]}}
+    text = app.split_summary(meta)
+    assert "2001" in text and "2024" in text
+    assert "\u2014" not in text
+
+
+def test_format_value_handles_missing_numbers():
+    assert app.format_value(3.14159) == "3.1"
+    assert app.format_value(float("nan")) == "Not observed"
+    assert app.format_value(None, missing="-") == "-"
+
+
+# ----------------------------------------------------------------------------
+# Page smoke tests: every page must render without raising
+# ----------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def app_test():
+    """Run the application headlessly with Streamlit's AppTest harness."""
+    from streamlit.testing.v1 import AppTest
+
+    harness = AppTest.from_file(str(REPO_ROOT / "app.py"), default_timeout=300)
+    return harness.run()
+
+
+def test_overview_page_renders(app_test):
+    assert not app_test.exception
+    assert [b.label for b in app_test.button] == app.PAGES
+    rendered = " ".join(m.value for m in app_test.markdown)
+    assert "Africa" in rendered and "Growth Explorer" in rendered
+    assert "ed-kpi-value" in rendered          # editorial KPI system in use
+    assert "ed-process-step" in rendered       # how it works strip
+
+
+@pytest.mark.parametrize("page", ["Explore Africa", "Model Performance",
+                                  "Scenario Explorer"])
+def test_other_pages_render(app_test, page):
+    app_test.button(key=f"nav_{page}").click().run()
+    assert not app_test.exception, [str(e.value) for e in app_test.exception]
+    rendered = " ".join(m.value for m in app_test.markdown)
+    assert "ed-section-title" in rendered
+
+
+def test_scenario_page_keeps_its_analytical_guardrails(app_test):
+    app_test.button(key="nav_Scenario Explorer").click().run()
+    assert not app_test.exception
+    assert 3 <= len(app_test.slider) <= 5, "scenario controls must stay 3 to 5"
+    rendered = " ".join(m.value for m in app_test.markdown)
+    assert "ed-guardrail" in rendered, "causal guardrail missing"
+    assert "training" in rendered.lower(), "training-window guardrail copy lost"
