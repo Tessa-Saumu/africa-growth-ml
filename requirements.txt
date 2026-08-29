@@ -17,7 +17,10 @@ numpy>=1.26.4,<2.0
 scikit-learn>=1.9.0,<2.0
 matplotlib>=3.7,<4.0
 seaborn>=0.12,<1.0
-streamlit>=1.30,<2.0
+# streamlit >= 1.62: .streamlit/config.toml uses [[theme.fontFaces]] plus the
+# baseRadius / borderColor / dataframeHeaderBackgroundColor theme options that
+# carry the Terracotta Editorial design tokens into Streamlit's own chrome.
+streamlit>=1.62,<2.0
 joblib>=1.3,<2.0
 pyarrow>=14.0
 pyyaml>=6.0,<7.0
