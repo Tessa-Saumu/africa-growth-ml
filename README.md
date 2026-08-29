@@ -2,7 +2,7 @@
 
 **Can development indicators predict next year's economic growth in Africa? This project tests that carefully, and the answer is no.**
 
-**Live app:** [https://africa-growth-ml.streamlit.app/](https://africa-growth-ml.streamlit.app/)
+**Live app:** 
 
 [![Live App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://africa-growth-ml.streamlit.app/)
 
