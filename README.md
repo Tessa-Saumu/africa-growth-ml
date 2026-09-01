@@ -208,9 +208,10 @@ africa-growth-ml/
 ├── models/                     # Trained model, its metadata, frozen predictions
 ├── notebooks/                  # Data profiling and model evaluation, both executed
 ├── reports/
-│   ├── capstone_report.md      # The full report
-│   └── generated/              # Every number quoted in the docs, auto-generated
-├── presentation/               # Slide outline and demo script
+│   ├── capstone_report.pdf      # The full report
+|   ├── presentation_deck.html   # Presentation deck html
+|   ├── presentation_deck.pdf    # Presentation deck pdf
+│   └── generated/              # Every number quoted in the docs, auto-generated         
 ├── scripts/
 │   ├── finalize_model.py       # Tune → check → score once → save
 │   ├── build_report_assets.py  # Generates every document number from the model
@@ -281,13 +282,16 @@ All four pages run with no backend: the app reads committed files (`models/growt
 
 ## Documentation
 
-- **Full report:** [`reports/capstone_report.md`](reports/capstone_report.md) — run `python scripts/build_report_pdf.py` for a PDF
-- **Presentation:** [`presentation/slides_outline.md`](presentation/slides_outline.md)
-- **Data sources and known gaps:** [`data/README.md`](data/README.md)
-
+- **Full report:** [`reports/capstone_report.md`](reports/capstone_report.pdf) — run `python scripts/build_report_pdf.py` for a PDF
+- **Presentation:** [`presentation/slides_outline.md`](reports/presentation_deck.pdf)
+  
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Development process
+
+Built with AI-assisted coding tools, directed end to end: I chose the project and the framing, set the standards the code had to meet, guided the implementation spec, made every scope and modeling decision, directed the visual design of the app and the report, and reviewed the result against my own bar before calling it finished. The tools wrote the code against that specification; the decisions, the standards, and the verification are mine.
 
 ## Acknowledgments
 
