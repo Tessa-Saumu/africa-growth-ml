@@ -1,64 +1,102 @@
 # Africa Growth Explorer
 
-I wanted to test whether development indicators could predict next year's economic growth across African countries. The useful result was a limit: **this model did not establish a meaningful improvement over simply predicting the historical average** on its fixed test period.
+I directed an AI-assisted project that tests whether development indicators improve next-year economic-growth predictions and explains the results in a Streamlit app.
 
-## What I built and contributed
+## The problem
 
-The project uses World Bank World Development Indicators to build a country-by-year table, compare models and explain the results in a four-page Streamlit app. You can explore countries, inspect model errors and adjust inputs to see how the saved model responds.
+I wanted to test whether current development conditions help predict next year's GDP-per-capita growth across African countries, beyond simple historical-average rules. The useful outcome was a limit: reliable improvement was not established on the fixed test period.
 
-I chose the question, directed the implementation and visual design, and reviewed the modelling decisions and results with AI-assisted coding tools. The history records AI co-authorship on substantial parts of the implementation. I do not present the code as exclusively hand-written work.
+## What I built
 
-## How I evaluated it
+The repository implements a World Bank indicator pipeline, a country-by-year table, temporal model selection, baseline comparisons, generated report tables and a four-page app for exploration, evaluation and model sensitivity. I chose the question and reviewed the work with AI-assisted coding tools; substantial implementation commits record AI co-authorship.
 
-The committed data covers **52 countries, 2000–2024, and 1,300 country-year rows**. Mauritius and Sudan are absent from this data snapshot. Each row uses one year's indicators to predict the following year's GDP-per-capita growth.
+## Architecture
 
-Older years train the model; later years tune it; the final test targets are 2022–2024. Missing-value handling is fitted inside each training fold. Settings are selected using temporal cross-validation: train on earlier years, check on the next years, then repeat with more history.
+```mermaid
+flowchart LR
+    W[World Bank indicators] --> D[Country-year table]
+    D --> F[Next-year target and time splits]
+    F --> T[Preprocessing and model selection]
+    T --> G[Validation baseline gate]
+    G --> A[Saved model and test predictions]
+    A --> R[Generated report tables]
+    D --> S[Streamlit exploration]
+    A --> S
+```
 
-Before saving a model, the validation gate compares it with the global-average and current-growth rules. A third rule, each country's historical average, is reported on the final test. Passing that gate does not guarantee future performance.
+## How it works
+
+Indicators for year t become inputs for growth in year t+1. Earlier years train the model; later years select settings; the final test covers target years 2022–2024. The app loads committed data and model artifacts rather than retraining. Sliders change model inputs to illustrate sensitivity, not cause and effect.
+
+## ML / AI methodology
+
+The 14 inputs include current growth, income, inflation, investment and development measures. The project compares Ridge (a regularized linear model) with histogram gradient boosting (trees built sequentially to correct errors). Missing-value handling is fitted inside training folds. Temporal cross-validation trains on earlier years and evaluates later ones.
+
+The validation gate compares the candidate with global-average and current-growth rules. A country's historical-average rule is additionally reported on the final test. The saved selected model is gradient boosting, fitted on training rows. Internal early stopping uses a random subset despite the outer temporal protocol.
+
+## Engineering
+
+Configuration-driven data handling, saved model metadata, a baseline gate, generated evidence tables, pytest checks and Streamlit artifact loading exist. Dependencies pin scikit-learn 1.9.0 to match the saved model. Substantial AI co-authorship is part of the development record.
 
 ## Results
 
-MAE means mean absolute error: the average size of a prediction error, measured here in percentage points of growth.
+MAE is mean absolute error, measured in percentage points of growth.
 
-| Test method | MAE |
+| Final test method | MAE |
 |---|---:|
 | Gradient-boosted trees | 1.82 |
 | Historical global average | 1.90 |
-| This year's growth | 2.23 |
-| Country's historical average | 1.94 |
+| Current growth | 2.23 |
+| Country historical average | 1.94 |
 
-The observed model-versus-average improvement was **0.074 percentage points**. Resampling the 150 test rows gave an improvement interval of **−0.0422 to +0.1868**, which crosses zero. That does not establish reliable uplift. The resampling treats country-year rows independently and does not account for shared-country or shared-year effects.
+The **0.074 percentage-point** model-versus-average difference had a resampled interval of **−0.0422 to +0.1868**, crossing zero. Reliable uplift was not established. Directional accuracy was **80.7%**, equal to always predicting positive growth.
 
-Directional accuracy was **80.7%**, exactly the same as the majority rule of always predicting positive growth. It adds no directional advantage.
+The committed panel has **1,300 rows, 52 countries and years 2000–2024**. On 13 October 2026, a scratch replay matched all **150 saved test predictions** and metrics exactly. The full suite passed **166 tests**, with one known expected failure for missing country coverage. After matching the library pin in a fresh Windows installation, 48 app/model checks passed without the version warning.
 
-On 13 October 2026, rerunning model selection from the committed table matched **all 150 saved predictions and the recorded metrics exactly**. The full suite passed **166 tests**, with one expected failure for missing country coverage. A fresh Windows Python 3.12 installation was checked; scikit-learn is pinned to the saved model's version, 1.9.0.
+## Demo
 
-## Run it
+![Streamlit project overview and baseline qualifications](assets/project_overview.png)
 
-Use Python 3.11 or 3.12. The saved model and app data are committed, so training and downloads are not needed to view the app.
+This is a repository screenshot. The historical hosted app has not been verified as currently available, so the local app is the supported demonstration. [Report source](reports/capstone_report.md) and [generated evidence](reports/generated/) document the experiment; PDF/deck exports are historical snapshots.
 
-```bash
+## Run locally
+
+The saved-data path was checked on Windows Python 3.12:
+
+```powershell
 python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-python -m pip install -r requirements.txt
-python -m pip install -e ".[dev]"
-streamlit run app.py
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m streamlit run app.py
 ```
 
-To check or reproduce the saved-data experiment without replacing its artifacts:
+For verified checks and scratch reproduction without replacing committed artifacts:
 
-```bash
-python -m pytest -q
-python scripts/finalize_model.py --output-dir work/reproduction
-python scripts/build_report_assets.py
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe scripts/finalize_model.py --output-dir work/reproduction
 ```
 
-For raw-data rebuilding, follow [data/README.md](data/README.md), then run `python -m src.data` and `python -m src.features`. A new World Bank download may differ from the original snapshot. Optional notebook execution uses `jupyter nbconvert --to notebook --execute --inplace notebooks/01_data_profiling.ipynb` and the same command for `02_model_evaluation.ipynb`.
+Raw-data rebuilding is separate: see [data/README.md](data/README.md). A new World Bank download may differ from the original snapshot.
 
-## Limits and evidence
+## Repository structure
 
-The original raw-data download date is missing. The reproducible path starts from the committed table. Internal early stopping uses a random subset even though outer model selection is temporal. Results cover later years for already-seen countries, not unseen countries.
+- `src/`, `config/`: loading, features, evaluation and app helpers.
+- `scripts/`: model selection and report generation.
+- `data/processed/`, `models/`: committed panel, model and predictions.
+- `app.py`, `assets/`: app and screenshots.
+- `reports/`, `presentation/`, `tests/`: evidence, presentation sources and checks.
 
-The app's sliders show model sensitivity, not cause and effect. Future scenario years are unevaluated illustrations, not validated forecasts. The [published app URL](https://africa-growth-ml.streamlit.app/) has not been checked for current availability. No policy impact or deployment adoption is claimed.
+## Limitations
 
-Read the [report source](reports/capstone_report.md), [presentation outline](presentation/slides_outline.md) and [generated evidence](reports/generated/). PDF/deck exports are historical snapshots. MIT licence: [LICENSE](LICENSE). Thanks to the World Bank and the AnalystLab internship programme for data and project guidance.
+The raw World Bank download date is missing. Mauritius and Sudan are absent from the panel. Evaluation covers later years for seen countries, not new countries. Row resampling does not account for shared-country or shared-year dependence. Future scenarios are unevaluated illustrations; no causal, policy-impact or adoption claim is supported.
+
+## What I would improve next
+
+1. Record the raw-data vintage and resolve missing-country coverage.
+2. Evaluate uncertainty while accounting for country/year dependence.
+3. Investigate model stability using a new untouched time period.
+
+## My contribution
+
+I selected the question, directed implementation and visual design, and reviewed modelling decisions and results. The sole human account is mine, but many substantial commits credit an AI coding agent; line-level human authorship cannot be recovered. I do not present all code as exclusively hand-written work. The capstone materials identify the AnalystLab internship programme as project guidance.
