@@ -254,7 +254,7 @@ All four pages run with no backend: the app reads committed files (`models/growt
 - [x] `app.py` at the repository root
 - [x] Imports resolve from the repo root; `pip install -e .` exposes `src.*`
 - [x] Trained model committed, not excluded by `.gitignore`
-- [ ] Fresh isolated installation remains a packaging gate; this repair ran against the existing Python 3.12 environment. Runtime requirements contain no test tooling
+- [x] Fresh isolated Python 3.12 installation verified; runtime requirements contain no test tooling, so install pytest separately for checks
 - [ ] Runtime dependency ranges are aligned across manifests; they are not an exact lock. Preserve the model metadata environment when reproducing saved model outputs; scikit-learn does not guarantee unpickling across minor versions
 - [x] No absolute local paths anywhere, enforced by `tests/test_hardcoded_paths.py`
 - [x] No live API calls
