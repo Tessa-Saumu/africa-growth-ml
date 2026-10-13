@@ -15,8 +15,8 @@
 > ranges from **0.04 worse** to **0.19 better**. Because that range includes
 > losing, the lead cannot be told apart from luck.
 >
-> So: knowing a country's development indicators this year does not help
-> predict its growth next year.
+> For this model, indicator set and frozen test window, useful predictive
+> improvement was not established. This does not rule out all economic forecasting.
 >
 > That is the finding, not an apology for one. What this project contributes
 > is the machinery that established it — controls that stop future
@@ -72,7 +72,7 @@ The three trivial rules exist to answer one question: is the model actually earn
 
 **Tuning without cheating.** Settings were chosen using only the training years, by training on an early stretch and checking against the years immediately after, then widening the stretch and repeating. The folds are 2000–2010 → 2011–12, 2000–2012 → 2013–14, 2000–2014 → 2015–16. The trees were tried at every combination of depth {2, 3} × learning rate {0.01, 0.03, 0.05} × rounds {100, 200}; Ridge at penalty strengths {1 … 3000}. The test years were never involved.
 
-**An automatic stop.** Before any model is saved, it must beat the trivial rules on the tuning data. If it doesn't, the build fails and writes nothing. This is what makes "worse than guessing the average" impossible to ship by accident.
+**An automatic stop.** Before any model is saved, it must beat the global-mean and persistence rules on the tuning data. The country-history rule is reported on test data but is not part of this gate. If it doesn't, the build fails and writes nothing. This checks tuning performance; it cannot guarantee future or test performance. An explicit override can write failed-gate artifacts and records that failure.
 
 **The test set is opened once.** It is read a single time, at the very end, to produce the final numbers. Nothing about the model is chosen afterwards.
 
@@ -96,7 +96,7 @@ Lower MAE and RMSE are better; both are average error sizes in percentage points
 | Ridge regression | tuning | 4.00 | 6.08 | −0.16 | 51.3% | 51.3% | 0.0 pts |
 | Predict the average | tuning | 4.04 | 6.14 | −0.18 | 51.3% | 51.3% | 0.0 pts |
 
-**Is the 0.07-point lead real?** No. Resampling the 150-row test set 5,000 times and re-running the comparison each time puts the margin anywhere between **0.04 worse** and **0.19 better**. A range that includes losing means the lead cannot be separated from chance.
+**Is the 0.07-point lead real?** No. Resampling the 150-row test set 5,000 times and re-running the comparison each time puts the margin anywhere between **0.04 worse** and **0.19 better**. This interval includes zero improvement. It resamples country-year rows independently and ignores within-country and shared-year dependence, so it is descriptive rather than a calibrated panel-confidence guarantee.
 
 **The 80.7% direction figure is not what it looks like.** The model calls growth up or down correctly 80.7% of the time. But growth was positive in 80.7% of test years, so always saying "up" — using no data at all — scores exactly the same. The gap between the model and that trivial rule is **zero**. Scoring up-years and down-years separately and averaging gives **51.3%**, a coin flip. This is the majority-class trap, and it is why the raw figure never appears alone here.
 
@@ -111,7 +111,7 @@ Four pages, built with Streamlit. It loads the saved model and never retrains or
 1. **Overview** — the problem, the data, the model, and the headline result with its caveat stated up front
 2. **Explore Africa** — growth trends by country, indicator charts, regional comparison
 3. **Model Performance** — how the model scores against the trivial rules, where its predictions land, its largest errors, and which indicators it actually used
-4. **Scenario Explorer** — adjust a country's indicators and watch the prediction move. Sliders are bounded by what the model saw in training, and warn when you push past it
+4. **Scenario Explorer** — adjust a country's indicators and watch the prediction move. Sliders are bounded by what the model saw in training, and warn when you push past it. Scenario years beyond the frozen 2022–2024 target window are unevaluated illustrations, not validated forecasts; changes show model responses, not causal effects
 
 ---
 
@@ -240,7 +240,7 @@ Dashboard captures from the live deployed app (`assets/`):
 
 ## Deployment
 
-**Status:** live. The app is deployed at [https://africa-growth-ml.streamlit.app/](https://africa-growth-ml.streamlit.app/) and verified locally (starts, serves, predictions and range warnings exercised end to end).
+**Status:** published URL (current hosted availability not verified in this repair). The repository records deployment at [https://africa-growth-ml.streamlit.app/](https://africa-growth-ml.streamlit.app/) The automated suite exercises app/model paths; this repair does not claim a fresh browser or hosted walkthrough.
 
 1. Push to GitHub
 2. Connect at [Streamlit Cloud](https://share.streamlit.io), entry point `app.py`
@@ -254,8 +254,8 @@ All four pages run with no backend: the app reads committed files (`models/growt
 - [x] `app.py` at the repository root
 - [x] Imports resolve from the repo root; `pip install -e .` exposes `src.*`
 - [x] Trained model committed, not excluded by `.gitignore`
-- [x] `requirements.txt` installs cleanly, with no test tooling mixed into runtime dependencies
-- [x] Runtime pins match the versions the model was pickled with — scikit-learn does not guarantee unpickling across minor versions
+- [ ] Fresh isolated installation remains a packaging gate; this repair ran against the existing Python 3.12 environment. Runtime requirements contain no test tooling
+- [ ] Runtime dependency ranges are aligned across manifests; they are not an exact lock. Preserve the model metadata environment when reproducing saved model outputs; scikit-learn does not guarantee unpickling across minor versions
 - [x] No absolute local paths anywhere, enforced by `tests/test_hardcoded_paths.py`
 - [x] No live API calls
 - [x] Model and data cached so they load once, not on every interaction
@@ -296,3 +296,7 @@ Built with AI-assisted coding tools, directed end to end: I chose the project an
 ## Acknowledgments
 
 World Bank for the World Development Indicators; the scikit-learn and Streamlit teams; and the AnalystLab internship programme for project guidance.
+
+## Reproduction boundary
+
+Use the committed panel and `python scripts/finalize_model.py --output-dir <scratch-directory>` to rerun selection without replacing frozen artifacts. Raw WDI vintage cannot be reconstructed from an undated download. Internal early stopping uses a random validation subset, even though outer model selection is temporal. [Current supporting audit and plan](SUPPORTING_AUDIT_PLAN.md) records checks and remaining limits.
