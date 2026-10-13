@@ -300,3 +300,6 @@ World Bank for the World Development Indicators; the scikit-learn and Streamlit 
 ## Reproduction boundary
 
 Use the committed panel and `python scripts/finalize_model.py --output-dir <scratch-directory>` to rerun selection without replacing frozen artifacts. Raw WDI vintage cannot be reconstructed from an undated download. Internal early stopping uses a random validation subset, even though outer model selection is temporal. [Current supporting audit and plan](SUPPORTING_AUDIT_PLAN.md) records checks and remaining limits.
+
+
+Installation verification (13 October 2026): a new Windows Python 3.12 environment passed166 tests with one known xfail. scikit-learn is pinned to the committed artifact version1.9.0; after that pin,48 app/model checks passed without warnings. This does not verify the current hosted app or reconstruct the missing raw-WDI vintage.

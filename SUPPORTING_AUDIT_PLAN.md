@@ -18,3 +18,8 @@ Safe positioning: artifact-driven temporal evaluation where useful improvement w
 ## Current verification checkpoint
 
 166 passed, 1 known xfailed; clean scratch replay exactly matches all 150 frozen predictions, metrics and gate. Existing environment, not isolated install.
+
+
+## Additional isolated-install verification — 2026-10-13
+
+Root installed the declared requirements into a new isolated CPython3.12.0 environment. Full suite: 166 passed, one existing xfail, 21 warnings. That install selected scikit-learn1.9.1 and exposed an artifact unpickle-version warning (artifact1.9.0). Requirements and pyproject now pin scikit-learn==1.9.0. After installing that exact version, the relevant app/finalize-model suite passed48 tests with no warnings reported. Earlier exact150-row replay used1.9.0 and remains unchanged. No model retraining or frozen artifact changes. Logs: work/verification/africa-clean-{install,tests,pin,pinned-tests}.log. Fresh installation is now verified within this Windows environment; hosted/raw-WDI claims remain unverified.
