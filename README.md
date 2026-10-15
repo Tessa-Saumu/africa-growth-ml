@@ -49,7 +49,7 @@ MAE is mean absolute error, measured in percentage points of growth.
 | Current growth | 2.23 |
 | Country historical average | 1.94 |
 
-The **0.074 percentage-point** model-versus-average difference had a resampled interval of **−0.0422 to +0.1868**, crossing zero. Reliable uplift was not established. Directional accuracy was **80.7%**, equal to always predicting positive growth.
+The **0.074 percentage-point** model-versus-average difference had a resampled interval of **−0.0422 to +0.1868**, crossing zero. Reliable uplift was not established. Directional accuracy was **80.7%**, equal to the majority-class baseline of always predicting positive growth.
 
 The committed panel has **1,300 rows, 52 countries and years 2000–2024**. On 13 October 2026, a scratch replay matched all **150 saved test predictions** and metrics exactly. The full suite passed **166 tests**, with one known expected failure for missing country coverage. After matching the library pin in a fresh Windows installation, 48 app/model checks passed without the version warning.
 
