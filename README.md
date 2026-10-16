@@ -1,10 +1,10 @@
 # Africa Growth Explorer
 
-I directed an AI-assisted project that tests whether development indicators improve next-year economic-growth predictions and explains the results in a Streamlit app.
+Africa Growth Explorer connects development data, next-year growth models and a four-page Streamlit interface so readers can inspect predictions alongside their evidence. I framed the question and directed the AI-assisted pipeline across 52 countries and 1,300 country-year records, including temporal evaluation and baseline comparisons.
 
 ## The problem
 
-I wanted to test whether current development conditions help predict next year's GDP-per-capita growth across African countries, beyond simple historical-average rules. The useful outcome was a limit: reliable improvement was not established on the fixed test period.
+I wanted to test whether current development conditions help predict next year's GDP-per-capita growth across African countries, beyond simple historical-average rules. The interface brings country trends, model predictions and baseline comparisons together so users can assess the evidence behind an estimate.
 
 ## What I built
 
@@ -39,6 +39,8 @@ The validation gate compares the candidate with global-average and current-growt
 Configuration-driven data handling, saved model metadata, a baseline gate, generated evidence tables, pytest checks and Streamlit artifact loading exist. Dependencies pin scikit-learn 1.9.0 to match the saved model. Substantial AI co-authorship is part of the development record.
 
 ## Results
+
+The delivered system combines a four-page exploration and evaluation app with saved model artifacts and generated reporting. Readers can inspect country trends, compare predictions with baselines and explore model sensitivity. Slider changes illustrate model behavior, not causal policy effects.
 
 MAE is mean absolute error, measured in percentage points of growth.
 
